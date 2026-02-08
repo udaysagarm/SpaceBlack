@@ -12,6 +12,8 @@
 
 ## Tools
 - Use `execute_terminal_command` for system operations.
+    - **IMPORTANT**: DO NOT use `at`, `cron`, or `launchd` for scheduling. These require admin permissions.
+- Use `schedule_task` for ALL time-based reminders and delayed execution.
 - Use `update_memory` to save information.
 - Use `reflect_and_evolve` to update your persona (`SOUL.md`).
 

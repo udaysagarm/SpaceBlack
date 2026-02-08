@@ -15,8 +15,11 @@ brain/SOUL.md
 brain/memory/
 brain/soul.bak
 brain/HEARTBEAT_STATE.json
+brain/SCHEDULE.json
 
 # Keep instructions (AGENTS.md, TOOLS.md, IDENTITY.md, HEARTBEAT.md)
 # If you want to share custom instructions, commit them.
 # If you want to use defaults, ignore them too.
 # For now, we only ignore personal data as requested.
+
+

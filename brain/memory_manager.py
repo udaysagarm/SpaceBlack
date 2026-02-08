@@ -14,6 +14,7 @@ USER_FILE = os.path.join(BRAIN_DIR, "USER.md")
 TOOLS_FILE = os.path.join(BRAIN_DIR, "TOOLS.md")
 HEARTBEAT_FILE = os.path.join(BRAIN_DIR, "HEARTBEAT.md")
 HEARTBEAT_STATE_FILE = os.path.join(MEMORY_DIR, "heartbeat-state.json")
+SCHEDULE_FILE = os.path.join(BRAIN_DIR, "SCHEDULE.json")
 
 # Default Contents
 DEFAULT_IDENTITY = """# IDENTITY.md - Who Am I?
@@ -109,7 +110,8 @@ def ensure_brain_initialized():
         (USER_FILE, DEFAULT_USER),
         (AGENTS_FILE, DEFAULT_AGENTS),
         (TOOLS_FILE, DEFAULT_TOOLS),
-        (SOUL_FILE, DEFAULT_SOUL)
+        (SOUL_FILE, DEFAULT_SOUL),
+        (SCHEDULE_FILE, "[]")  # Empty list for schedule
     ]
     
     for filepath, content in files:

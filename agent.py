@@ -34,6 +34,7 @@ from brain.memory_manager import (
     SOUL_FILE,
     HEARTBEAT_FILE,
     HEARTBEAT_STATE_FILE,
+    SCHEDULE_FILE,
     IDENTITY_FILE,
     load_config
 )
@@ -45,10 +46,38 @@ HEARTBEAT_STATE_FILE = os.path.join(BRAIN_DIR, "memory", "heartbeat-state.json")
 
 def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
     """
-    Checks if a heartbeat is needed. If so, runs the background tasks defined in HEARTBEAT.md.
-    Returns a string if there's a notification for the user, else None.
+    Checks if a heartbeat is needed. If so, runs background tasks.
+    Also checks schedule for due tasks.
     """
-    # 1. Check State
+    # 1. Check Schedule (Every run)
+    schedule_notifications = []
+    try:
+        schedule_content = read_file_safe(SCHEDULE_FILE, "[]")
+        schedule = json.loads(schedule_content)
+        
+        current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        matches = []
+        remaining = []
+        
+        for item in schedule:
+            if item["time"] <= current_time_str:
+                matches.append(item)
+            else:
+                remaining.append(item)
+                
+        if matches:
+            # We have due tasks!
+            # Propagate specific notifications
+            for task in matches:
+                schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Time: {task['time']})")
+            
+            # Save updated schedule (removing executed tasks)
+            with open(SCHEDULE_FILE, "w") as f:
+                json.dump(remaining, f, indent=4)
+    except Exception as e:
+        schedule_notifications.append(f"Scheduler Error: {e}")
+
+    # 2. Check Autonomous Interval (Every 3 hours)
     last_run = 0
     if os.path.exists(HEARTBEAT_STATE_FILE):
         try:
@@ -58,45 +87,51 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
         except: pass
     
     now = time.time()
+    heartbeat_msg = None
+    
     # 3 hours = 10800 seconds
-    if not force and (now - last_run < 10800):
-        return None
-
-    # 2. Prepare Context
-    heartbeat_instructions = read_file_safe(HEARTBEAT_FILE, "Report status.")
-    identity = read_file_safe(IDENTITY_FILE)
-    
-    prompt = f"""
-    [SYSTEM WAKEUP - AUTONOMOUS HEARTBEAT]
-    You are {identity}.
-    You have just woken up for a scheduled background check.
-    
-    [INSTRUCTIONS]
-    {heartbeat_instructions}
-    
-    [TASK]
-    Perform the check. 
-    - If everything is normal and no action is needed, reply with 'Status: OK'.
-    - If there is something the user needs to know (e.g. system alert, suggestion), write a short message.
-    """
-    
-    # 3. specific LLM call
-    try:
-        config = load_config()
-        # Use a cheap/fast model if possible, or same as config
-        llm = get_llm(config["provider"], config["model"], temperature=0.3)
-        response = llm.invoke(prompt).content.strip()
-        
-        # 4. Update State
-        with open(HEARTBEAT_STATE_FILE, "w") as f:
-            json.dump({"last_run": now, "status": "ok"}, f)
+    if force or (now - last_run >= 10800):
+        # Run standard heartbeat check
+        try:
+            heartbeat_instructions = read_file_safe(HEARTBEAT_FILE, "Report status.")
+            identity = read_file_safe(IDENTITY_FILE)
             
-        if "Status: OK" in response:
-            return None
-        return response
+            prompt = f"""
+            [SYSTEM WAKEUP - AUTONOMOUS HEARTBEAT]
+            You are {identity}.
+            You have just woken up for a scheduled background check.
+            
+            [INSTRUCTIONS]
+            {heartbeat_instructions}
+            
+            [TASK]
+            Perform the check. 
+            - If everything is normal and no action is needed, reply with 'Status: OK'.
+            - If there is something the user needs to know (e.g. system alert, suggestion), write a short message.
+            """
+            
+            config = load_config()
+            llm = get_llm(config["provider"], config["model"], temperature=0.3)
+            response = llm.invoke(prompt).content.strip()
+            
+            with open(HEARTBEAT_STATE_FILE, "w") as f:
+                json.dump({"last_run": now, "status": "ok"}, f)
+                
+            if "Status: OK" not in response:
+                heartbeat_msg = response
+        except Exception as e:
+            heartbeat_msg = f"Heartbeat Error: {str(e)}"
+
+    # Combine results
+    results = []
+    if schedule_notifications:
+        results.extend(schedule_notifications)
+    if heartbeat_msg:
+        results.append(heartbeat_msg)
         
-    except Exception as e:
-        return f"Heartbeat Error: {str(e)}"
+    if results:
+        return "\n\n".join(results)
+    return None
 
 # --- Tools ---
 
@@ -192,7 +227,7 @@ def execute_terminal_command(command: str):
     Executes a terminal command.
     SAFETY: Blocks 'rm', 'mv', 'dd' without confirmation.
     """
-    forbidden = ["rm ", "mv ", "dd ", "> /dev/null", ":(){:|:&};:"]
+    forbidden = ["rm ", "mv ", "dd ", "at ", "crontab", "> /dev/null", ":(){:|:&};:"]
     for taboo in forbidden:
         if taboo in command:
             return f"SAFETY BLOCK: Command '{command}' contains dangerous operations ({taboo}). Ask for confirmation."
@@ -207,6 +242,38 @@ def execute_terminal_command(command: str):
         return output if output.strip() else "(No output)"
     except Exception as e:
         return f"Execution failed: {str(e)}"
+
+@tool
+def schedule_task(time_str: str, task: str):
+    """
+    Schedules a task for future execution.
+    Args:
+        time_str: "YYYY-MM-DD HH:MM" (24-hour format). Example: "2026-02-09 14:30"
+        task: Description of the task to perform.
+    
+    NOTE: If the user asks for a time that is "now" or "in 1 minute" or even slightly passed, 
+    just schedule it. The system checks every minute and will execute overdue tasks immediately.
+    """
+    try:
+        # Validate format
+        datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M")
+        
+        current_content = read_file_safe(SCHEDULE_FILE, "[]")
+        schedule = json.loads(current_content)
+        
+        schedule.append({"time": time_str, "task": task})
+        
+        # Sort by time
+        schedule.sort(key=lambda x: x["time"])
+        
+        with open(SCHEDULE_FILE, "w") as f:
+            json.dump(schedule, f, indent=4)
+            
+        return f"Task scheduled for {time_str}: {task}"
+    except ValueError:
+        return "Error: Invalid time format. Please use 'YYYY-MM-DD HH:MM'."
+    except Exception as e:
+        return f"Scheduling failed: {str(e)}"
 
 
 from langgraph.graph.message import add_messages
@@ -237,7 +304,7 @@ def run_agent(state: AgentState):
     
     config = load_config()
     llm = get_llm(config["provider"], config["model"], temperature=0)
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task]
     llm_with_tools = llm.bind_tools(tools)
     
     response = llm_with_tools.invoke(messages)
@@ -246,7 +313,7 @@ def run_agent(state: AgentState):
 def build_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", run_agent)
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task]
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
     

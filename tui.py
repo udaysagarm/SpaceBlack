@@ -232,8 +232,8 @@ class AgentInterface(App):
 
     def on_mount(self):
         self.update_footer_model()
-        # Schedule heartbeat every 3 hours (10800 seconds)
-        self.set_interval(10800, self.scheduled_heartbeat)
+        # Schedule heartbeat every 60 seconds (1 minute) for task scheduler
+        self.set_interval(60, self.scheduled_heartbeat)
         
         # Run once on startup (optional, maybe check if missed)
         self.scheduled_heartbeat()
@@ -268,7 +268,10 @@ class AgentInterface(App):
              result = run_autonomous_heartbeat()
              
              if result:
+                 # 1. Show visual alert
                  self.call_from_thread(self.display_system_alert, result)
+                 # 2. Trigger Agent Response automatically
+                 self.process_agent_response(f"SYSTEM ALERT: {result}")
                  
         except Exception as e:
             # Silently fail or log?
