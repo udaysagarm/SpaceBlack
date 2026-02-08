@@ -39,32 +39,70 @@ class SetupWizard(App):
     .error {
         color: red;
         text-align: center;
+        margin-top: 1;
     }
     
     .success {
         color: green;
         text-align: center;
+        margin-top: 1;
+    }
+
+    .field-group {
+        margin-bottom: 2;
+    }
+
+    .help-text {
+        color: $text-muted;
+        text-style: italic;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+
+    /* Fix Visibility */
+    Input {
+        background: $boost;
+        border: tall $background;
+        height: 3;
+        color: $text;
+    }
+    
+    Select {
+        background: $boost;
+        border: tall $background;
+        height: 3;
+        color: $text;
     }
     """
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Container():
-            yield Label("[bold]Welcome to the AI Terminal Agent[/]")
-            yield Label("Please configure your AI Provider.")
+            yield Label("[bold]Welcome to the AI Terminal Agent[/]", classes="field-group")
+            yield Label("Please configure your AI Provider and Search tools.", classes="field-group")
             
-            yield Label("Select Provider:")
-            yield Select(
-                options=[("Google Gemini", "google"), ("OpenAI", "openai"), ("Anthropic", "anthropic")],
-                id="provider_select",
-                value="google"
-            )
+            with Vertical(classes="field-group"):
+                yield Label("Select AI Provider:")
+                yield Select(
+                    options=[("Google Gemini", "google"), ("OpenAI", "openai"), ("Anthropic", "anthropic")],
+                    id="provider_select",
+                    value="google"
+                )
             
-            yield Label("Enter API Key:")
-            yield Input(placeholder="sk-...", password=True, id="api_key_input")
+            with Vertical(classes="field-group"):
+                yield Label("AI Provider API Key:")
+                yield Input(placeholder="sk-...", password=True, id="api_key_input")
+                yield Label("Get this from Google AI Studio, OpenAI, or Anthropic console.", classes="help-text")
             
-            yield Label("Model Name (Optional - press Enter for default):")
-            yield Input(placeholder="Default depends on provider (e.g. gpt-4o, gemini-1.5-pro)", id="model_input")
+            with Vertical(classes="field-group"):
+                yield Label("Model Name (Optional):")
+                yield Input(placeholder="Default depends on provider (e.g. gpt-4o, gemini-1.5-pro)", id="model_input")
+                yield Label("Leave empty to use the recommended default model.", classes="help-text")
+            
+            with Vertical(classes="field-group"):
+                yield Label("Brave Search API Key (Optional):")
+                yield Input(placeholder="BSAA...", password=True, id="brave_key_input")
+                yield Label("Required for agent to search the web. Free at brave.com/search/api", classes="help-text")
             
             yield Static("", id="status_message")
             yield Button("Verify & Save", variant="primary", id="save_btn")
@@ -75,6 +113,7 @@ class SetupWizard(App):
             provider = self.query_one("#provider_select").value
             api_key = self.query_one("#api_key_input").value
             model = self.query_one("#model_input").value
+            brave_key = self.query_one("#brave_key_input").value
             
             if not api_key:
                 self.update_status("API Key is required!", "error")
@@ -90,7 +129,7 @@ class SetupWizard(App):
                 model = defaults.get(provider, "gpt-4o")
             
             self.update_status("Verifying key...", "normal")
-            self.verify_and_save(provider, model, api_key)
+            self.verify_and_save(provider, model, api_key, brave_key)
 
     def update_status(self, message: str, type: str = "normal"):
         status = self.query_one("#status_message")
@@ -98,7 +137,7 @@ class SetupWizard(App):
         status.classes = type
 
     @work(exclusive=True, thread=True)
-    def verify_and_save(self, provider, model, api_key):
+    def verify_and_save(self, provider, model, api_key, brave_key):
         try:
             # Temporarily set env var for the factory or pass it directly
             # The factory supports passing api_key directly now
@@ -142,6 +181,10 @@ class SetupWizard(App):
             # Update or append
             new_lines = [line for line in existing_lines if not line.startswith(f"{env_var}=")]
             new_lines.append(f"{env_var}={api_key}\n")
+            
+            if brave_key:
+                new_lines = [line for line in new_lines if not line.startswith("BRAVE_API_KEY=")]
+                new_lines.append(f"BRAVE_API_KEY={brave_key}\n")
             
             with open(ENV_FILE, "w") as f:
                 f.writelines(new_lines)

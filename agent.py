@@ -10,8 +10,10 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Base
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+from langchain_community.tools import BraveSearch, DuckDuckGoSearchRun
 from brain.llm_factory import get_llm
 from dotenv import load_dotenv
+import json
 
 # Load environment variables
 load_dotenv()
@@ -275,6 +277,38 @@ def schedule_task(time_str: str, task: str):
     except Exception as e:
         return f"Scheduling failed: {str(e)}"
 
+@tool
+def web_search(query: str):
+    """
+    Performs a web search using the configured provider (Brave or DuckDuckGo).
+    Use this to find information about current events, technical documentation, 
+    or any topic where your internal knowledge might be outdated or incomplete.
+    """
+    try:
+        # Determine provider from config
+        provider = "brave" # Default
+        if os.path.exists("config.json"):
+            try:
+                with open("config.json", "r") as f:
+                    data = json.load(f)
+                    provider = data.get("search_provider", "brave")
+            except: pass
+            
+        if provider == "duckduckgo":
+            search = DuckDuckGoSearchRun()
+            return search.run(query)
+            
+        # Default to Brave
+        api_key = os.environ.get("BRAVE_API_KEY")
+        if not api_key:
+             # Fallback if key missing but brave selected
+             return "Error: BRAVE_API_KEY not found. Please set it in /config or switch to DuckDuckGo."
+             
+        search = BraveSearch.from_api_key(api_key=api_key, search_kwargs={"count": 3})
+        return search.run(query)
+    except Exception as e:
+        return f"Search failed: {str(e)}"
+
 
 from langgraph.graph.message import add_messages
 
@@ -304,7 +338,7 @@ def run_agent(state: AgentState):
     
     config = load_config()
     llm = get_llm(config["provider"], config["model"], temperature=0)
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search]
     llm_with_tools = llm.bind_tools(tools)
     
     response = llm_with_tools.invoke(messages)
@@ -313,7 +347,7 @@ def run_agent(state: AgentState):
 def build_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", run_agent)
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search]
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
     

@@ -11,6 +11,7 @@
 - **Persist**: Update `MEMORY.md` with high-level summaries when appropriate.
 
 ## Tools
+- Use `web_search` to find information about current events, documentation, or specific errors you don't know.
 - Use `execute_terminal_command` for system operations.
     - **IMPORTANT**: DO NOT use `at`, `cron`, or `launchd` for scheduling. These require admin permissions.
 - Use `schedule_task` for ALL time-based reminders and delayed execution.

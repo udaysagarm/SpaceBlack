@@ -1,7 +1,8 @@
 
 from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Header, Footer, Input, Static, Label, Select, Button
+from textual.widgets import Header, Footer, Input, Static, Label, Select, Button, TabbedContent, TabPane
 from textual.screen import ModalScreen
 from textual import work, on
 from langchain_core.messages import HumanMessage
@@ -37,8 +38,16 @@ class ChatMessage(Static):
             self.text = str(text)
 
     def compose(self) -> ComposeResult:
-        prefix = "👤 User: " if self.role == "user" else "🤖 Agent: "
-        yield Label(prefix + self.text, classes=f"message {self.role}")
+        # Icons: Safe Unicode
+        # User: ► (U+25BA)
+        # Agent: ◼ (U+25FC) or ◆ (U+25C6)
+        
+        if self.role == "user":
+            prefix = "[bold cyan]► User:[/]" 
+        else:
+            prefix = "[bold green]◼ Agent:[/]"
+        
+        yield Label(prefix + " " + self.text, classes=f"message {self.role}")
 
 
 class SoulSidebar(Static):
@@ -63,58 +72,162 @@ class ConfigScreen(ModalScreen):
     }
     
     #dialog {
-        width: 60;
-        height: auto;
+        width: 90%;
+        max-width: 80;
+        min-width: 40;
+        height: 80%;
+        max-height: 40;
         border: solid green;
-        padding: 2;
+        padding: 1 2;
         background: $surface;
+        overflow-y: auto;
     }
     
     Label {
-        margin-top: 1;
-        margin-bottom: 1;
+        margin-top: 0;
+        margin-bottom: 0;
+        height: auto;
     }
     
     Button {
-        margin-top: 2;
+        margin-top: 1;
         width: 100%;
+        min-width: 10;
     }
     
     .error { color: red; }
     .success { color: green; }
+
+    .field-group {
+        margin-bottom: 1;
+        height: auto;
+    }
+    
+    .help-text {
+        color: $text-muted;
+        text-style: italic;
+        margin-top: 0;
+        height: 1;
+    }
+
+    .config-title {
+        text-align: center;
+        margin-bottom: 1;
+        height: 1;
+    }
+    
+    .section-header {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $accent;
+        text-style: bold;
+        height: 1;
+    }
+
+    .btn-group {
+        margin-top: 1;
+        height: 3;
+    }
+
+    /* High Contrast Inputs */
+    Input {
+        background: $panel; 
+        border: solid $accent;
+        height: 3;
+        min-height: 3;
+        color: $text;
+        width: 100%;
+    }
+    
+    Input:focus {
+        border: double $primary;
+    }
+    
+    Select {
+        background: #1a1a2e;
+        border: solid $accent;
+        height: 3;
+        min-height: 3;
+        color: white;
+        width: 100%;
+    }
+    
+    Select:focus {
+        border: double $primary;
+    }
+    
+    SelectCurrent {
+        background: #1a1a2e;
+        color: white;
+    }
+    
+    SelectCurrent > Static {
+        color: white;
+    }
     """
 
     def compose(self) -> ComposeResult:
         # Load current config
         current_provider = "google"
         current_model = ""
+        current_search_provider = "brave"
+        
         if os.path.exists(CONFIG_FILE):
              try:
                  with open(CONFIG_FILE, "r") as f:
                      data = json.load(f)
                      current_provider = data.get("provider", "google")
                      current_model = data.get("model", "")
+                     current_search_provider = data.get("search_provider", "brave")
              except: pass
 
         with Container(id="dialog"):
-            yield Label("[bold]Agent Configuration[/]")
+            yield Label("[bold]Agent Configuration[/]", classes="field-group config-title")
             
-            yield Label("Select Provider:")
-            yield Select(
-                options=[("Google Gemini", "google"), ("OpenAI", "openai"), ("Anthropic", "anthropic")],
-                id="provider_select",
-                value=current_provider
-            )
+            # AI Section
+            yield Label("🧠 AI Brain", classes="section-header")
             
-            yield Label("API Key (Leave empty to keep existing):")
-            yield Input(placeholder="(Hidden)", password=True, id="api_key_input")
+            with Vertical(classes="field-group"):
+                yield Label("Select AI Provider:")
+                yield Select(
+                    options=[("Google Gemini", "google"), ("OpenAI", "openai"), ("Anthropic", "anthropic")],
+                    id="provider_select",
+                    value=current_provider,
+                    allow_blank=False
+                )
             
-            yield Label("Model Name:")
-            yield Input(value=current_model, placeholder="e.g. gemini-1.5-pro", id="model_input")
+            with Vertical(classes="field-group"):
+                yield Label("AI Provider API Key:")
+                yield Input(placeholder="(Hidden)", password=True, id="api_key_input")
+                yield Label("Leave empty to keep existing key.", classes="help-text")
             
+            with Vertical(classes="field-group"):
+                yield Label("Model Name:")
+                yield Input(value=current_model, placeholder="e.g. gemini-1.5-pro", id="model_input")
+                yield Label("Specific model identifier (optional).", classes="help-text")
+            
+            # Web Section
+            yield Label("🌐 Web Capabilities", classes="section-header")
+            
+            with Vertical(classes="field-group"):
+                yield Label("Search Provider:")
+                yield Select(
+                    options=[("Brave Search (Recommended)", "brave"), ("DuckDuckGo (Free/Slower)", "duckduckgo")],
+                    id="search_provider_select",
+                    value=current_search_provider,
+                    allow_blank=False
+                )
+            
+            with Vertical(classes="field-group"):
+                yield Label("Brave Search API Key:")
+                yield Input(placeholder="(Hidden)", password=True, id="brave_key_input")
+                yield Label("Required for Brave. Leave empty to keep existing.", classes="help-text")
+
             yield Static("", id="status_message")
-            yield Button("Save & Close", variant="primary", id="save_btn")
-            yield Button("Cancel", variant="error", id="cancel_btn")
+            
+            with Horizontal(classes="field-group btn-group"):
+                yield Button("Save & Close", variant="primary", id="save_btn")
+                yield Button("Cancel", variant="error", id="cancel_btn")
 
     @on(Button.Pressed)
     def handle_buttons(self, event: Button.Pressed):
@@ -127,6 +240,7 @@ class ConfigScreen(ModalScreen):
         provider = self.query_one("#provider_select").value
         api_key = self.query_one("#api_key_input").value
         model = self.query_one("#model_input").value
+        brave_key = self.query_one("#brave_key_input").value
         
         # 1. Update Config File
         config_data = {"provider": provider, "model": model}
@@ -191,7 +305,7 @@ class AgentInterface(App):
         padding: 1;
     }
 
-    Input {
+    #chat_input {
         dock: bottom;
         margin: 1;
     }
@@ -226,7 +340,7 @@ class AgentInterface(App):
             with Container(id="chat-container"):
                 with Vertical(id="chat-history"):
                     yield Static("System: Agent initialized. Type '/config' to change settings or 'exit' to quit.", classes="agent")
-                yield Input(placeholder="Type your command or message here...")
+                yield Input(placeholder="Type your command or message here...", id="chat_input")
         
         yield Footer()
 

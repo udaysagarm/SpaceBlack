@@ -16,6 +16,8 @@ brain/memory/
 brain/soul.bak
 brain/HEARTBEAT_STATE.json
 brain/SCHEDULE.json
+brain/memory_*.md
+scripts/
 
 # Keep instructions (AGENTS.md, TOOLS.md, IDENTITY.md, HEARTBEAT.md)
 # If you want to share custom instructions, commit them.
