@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# Project Specific
+config.json
+
+# Memory & Brain (Personal Data)
+brain/USER.md
+brain/SOUL.md
+brain/memory/
+brain/soul.bak
+brain/HEARTBEAT_STATE.json
+
+# Keep instructions (AGENTS.md, TOOLS.md, IDENTITY.md, HEARTBEAT.md)
+# If you want to share custom instructions, commit them.
+# If you want to use defaults, ignore them too.
+# For now, we only ignore personal data as requested.
