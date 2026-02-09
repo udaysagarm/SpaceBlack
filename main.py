@@ -27,10 +27,8 @@ def main():
         # Importing is better for flow, but Textual apps usually capture full screen.
         # Let's import and run.
         
-        from setup_wizard import SetupWizard
-        app = SetupWizard()
-        # app.run() returns when exit() is called
-        app.run()
+        from setup_wizard import main as run_setup_wizard
+        run_setup_wizard()
         
         # Check again if config was created
         if not os.path.exists(CONFIG_FILE):
