@@ -114,7 +114,10 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
             
             config = load_config()
             llm = get_llm(config["provider"], config["model"], temperature=0.3)
-            response = llm.invoke(prompt).content.strip()
+            res = llm.invoke(prompt)
+            content = res.content
+            if isinstance(content, list): content = " ".join([str(p) for p in content])
+            response = content.strip()
             
             with open(HEARTBEAT_STATE_FILE, "w") as f:
                 json.dump({"last_run": now, "status": "ok"}, f)
