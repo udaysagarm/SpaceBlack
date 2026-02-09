@@ -1,226 +1,120 @@
 
 import os
 import json
-from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical
-from textual.widgets import Header, Footer, Input, Select, Button, Label, Static
-from textual import work
+import time
 from brain.llm_factory import get_llm
+from rich.console import Console
+from rich.prompt import Prompt, Confirm
+from rich.panel import Panel
 
+console = Console()
 CONFIG_FILE = "config.json"
 ENV_FILE = ".env"
 
-class SetupWizard(App):
-    """First-run setup wizard for the AI Agent."""
-    
-    CSS = """
-    Screen {
-        align: center middle;
-    }
-    
-    Container {
-        width: 90%;
-        max-width: 80;
-        min-width: 40;
-        height: 80%;
-        max-height: 40;
-        border: solid green;
-        padding: 1 2;
-        background: $surface;
-        overflow-y: auto;
-    }
-    
-    Label {
-        margin-top: 1;
-        margin-bottom: 0;
-    }
-    
-    Button {
-        margin-top: 2;
-        width: 100%;
-    }
-    
-    .error { color: red; text-align: center; margin-top: 1; }
-    .success { color: green; text-align: center; margin-top: 1; }
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
-    .field-group {
-        margin-bottom: 1;
-        height: auto;
+def save_config(provider, model_name, api_key, brave_key):
+    # 1. Save config.json
+    config_data = {
+        "provider": provider,
+        "model": model_name
     }
-
-    .help-text {
-        color: $text-muted;
-        text-style: italic;
-        margin-top: 0;
-        margin-bottom: 1;
-        height: auto;
-    }
-
-    /* High Contrast Inputs */
-    Input {
-        background: #1a1a2e; 
-        border: solid $accent;
-        height: 3;
-        min-height: 3;
-        color: white;
-        width: 100%;
-    }
-    
-    Input:focus {
-        border: double $primary;
-    }
-    
-    Select {
-        background: #1a1a2e;
-        border: solid $accent;
-        height: 3;
-        min-height: 3;
-        color: white;
-        width: 100%;
-    }
-    
-    Select:focus {
-        border: double $primary;
-    }
-    
-    SelectCurrent {
-        background: #1a1a2e;
-        color: white;
-    }
-    
-    SelectCurrent > Static {
-        color: white;
-    }
-    """
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        with Container():
-            yield Label("[bold]Welcome to the AI Terminal Agent[/]", classes="field-group")
-            yield Label("Please configure your AI Provider and Search tools.", classes="field-group")
-            
-            with Vertical(classes="field-group"):
-                yield Label("Select AI Provider:")
-                yield Select(
-                    options=[("Google Gemini", "google"), ("OpenAI", "openai"), ("Anthropic", "anthropic")],
-                    id="provider_select",
-                    value="google"
-                )
-            
-            with Vertical(classes="field-group"):
-                yield Label("AI Provider API Key:")
-                yield Input(placeholder="sk-...", password=True, id="api_key_input")
-                yield Label("Get this from Google AI Studio, OpenAI, or Anthropic console.", classes="help-text")
-            
-            with Vertical(classes="field-group"):
-                yield Label("Model Name (Optional):")
-                yield Input(placeholder="Default depends on provider (e.g. gpt-4o, gemini-1.5-pro)", id="model_input")
-                yield Label("Leave empty to use the recommended default model.", classes="help-text")
-            
-            with Vertical(classes="field-group"):
-                yield Label("Brave Search API Key (Optional):")
-                yield Input(placeholder="BSAA...", password=True, id="brave_key_input")
-                yield Label("Required for agent to search the web. Free at brave.com/search/api", classes="help-text")
-            
-            yield Static("", id="status_message")
-            yield Button("Verify & Save", variant="primary", id="save_btn")
-        yield Footer()
-
-    async def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "save_btn":
-            provider = self.query_one("#provider_select").value
-            api_key = self.query_one("#api_key_input").value
-            model = self.query_one("#model_input").value
-            brave_key = self.query_one("#brave_key_input").value
-            
-            if not api_key:
-                self.update_status("API Key is required!", "error")
-                return
-                
-            # Set default models if empty
-            if not model:
-                defaults = {
-                    "google": "gemini-1.5-pro",
-                    "openai": "gpt-4o",
-                    "anthropic": "claude-3-5-sonnet"
-                }
-                model = defaults.get(provider, "gpt-4o")
-            
-            self.update_status("Verifying key...", "normal")
-            self.verify_and_save(provider, model, api_key, brave_key)
-
-    def update_status(self, message: str, type: str = "normal"):
-        status = self.query_one("#status_message")
-        status.update(message)
-        status.classes = type
-
-    @work(exclusive=True, thread=True)
-    def verify_and_save(self, provider, model, api_key, brave_key):
+    # Persist search provider if it was already there, or default to brave
+    if os.path.exists(CONFIG_FILE):
         try:
-            # Temporarily set env var for the factory or pass it directly
-            # The factory supports passing api_key directly now
-            
-            llm = get_llm(provider, model, api_key=api_key)
-            
-            # Simple invocation to test
-            # We use invoke because get_llm returns a sync/async compatible object, 
-            # but wrapping in a thread via @work is safest for blocking calls
-            try:
-                llm.invoke("Hello")
-            except Exception as e:
-                # Some verification might fail if models are different or auth fails
-                 self.call_from_thread(self.update_status, f"Verification Failed: {str(e)}", "error")
-                 return
+            with open(CONFIG_FILE, "r") as f:
+                existing = json.load(f)
+                if "search_provider" in existing:
+                    config_data["search_provider"] = existing["search_provider"]
+        except: pass
 
-            # If successful, save config
-            config_data = {
-                "provider": provider,
-                "model": model
-            }
-            
-            # Write config.json
-            with open(CONFIG_FILE, "w") as f:
-                json.dump(config_data, f, indent=4)
-                
-            # Write .env
-            env_var_map = {
-                "google": "GOOGLE_API_KEY",
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY"
-            }
-            env_var = env_var_map.get(provider)
-            
-            # Read existing .env if any
-            existing_lines = []
-            if os.path.exists(ENV_FILE):
-                with open(ENV_FILE, "r") as f:
-                    existing_lines = f.readlines()
-            
-            # Update or append
-            new_lines = [line for line in existing_lines if not line.startswith(f"{env_var}=")]
-            new_lines.append(f"{env_var}={api_key}\n")
-            
-            if brave_key:
-                new_lines = [line for line in new_lines if not line.startswith("BRAVE_API_KEY=")]
-                new_lines.append(f"BRAVE_API_KEY={brave_key}\n")
-            
-            with open(ENV_FILE, "w") as f:
-                f.writelines(new_lines)
-                
-            self.call_from_thread(self.update_status, "Success! Configuration saved.", "success")
-            
-            # Wait a moment then exit
-            # time.sleep(1) 
-            # self.app.exit() -> cannot call app.exit() from thread directly easily without callback? 
-            # Actually, call_from_thread can call a method that exits
-            self.call_from_thread(self.exit_app)
-            
-        except Exception as e:
-             self.call_from_thread(self.update_status, f"Error: {str(e)}", "error")
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config_data, f, indent=4)
 
-    def exit_app(self):
-        self.exit(result=True)
+    # 2. Update .env
+    env_var_map = {
+        "google": "GOOGLE_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY"
+    }
+    env_var = env_var_map.get(provider)
+
+    # Read existing
+    existing_lines = []
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE, "r") as f:
+            existing_lines = f.readlines()
+
+    # Filter out old key for this provider
+    new_lines = [line for line in existing_lines if not line.startswith(f"{env_var}=")]
+    new_lines.append(f"{env_var}={api_key}\n")
+
+    if brave_key:
+        new_lines = [line for line in new_lines if not line.startswith("BRAVE_API_KEY=")]
+        new_lines.append(f"BRAVE_API_KEY={brave_key}\n")
+
+    with open(ENV_FILE, "w") as f:
+        f.writelines(new_lines)
+    
+    # Update current env for verification usage
+    os.environ[env_var] = api_key
+    if brave_key:
+        os.environ["BRAVE_API_KEY"] = brave_key
+
+def main():
+    clear_screen()
+    console.print(Panel.fit("[bold cyan]Space Black | Setup Wizard[/]", border_style="cyan"))
+    console.print("Welcome! Let's get you connected to the AI.\n")
+
+    # 1. Select Provider
+    console.print("[bold]Step 1: Choose your AI Provider[/]")
+    choices = ["google", "anthropic", "openai"]
+    provider = Prompt.ask("Select Provider", choices=choices, default="google")
+
+    # 2. Enter API Key
+    console.print(f"\n[bold]Step 2: Enter {provider.capitalize()} API Key[/]")
+    api_key = Prompt.ask("API Key", password=True)
+    if not api_key:
+        console.print("[red]API Key is required![/]")
+        return
+    
+    # 3. Model Name (Optional)
+    default_models = {
+        "google": "gemini-1.5-pro",
+        "openai": "gpt-4o",
+        "anthropic": "claude-3-5-sonnet"
+    }
+    default_model = default_models.get(provider, "gemini-1.5-pro")
+    
+    console.print(f"\n[bold]Step 3: Model Name[/] (Default: [green]{default_model}[/])")
+    model_name = Prompt.ask("Enter Model Name (or press Enter for default)", default=default_model)
+
+    # 4. Brave Search
+    console.print("\n[bold]Step 4: Web Search[/]")
+    brave_key = None
+    if Confirm.ask("Do you have a Brave Search API Key?"):
+        brave_key = Prompt.ask("Enter Brave Search API Key", password=True)
+
+    # 5. Verify
+    console.print("\n[yellow]Verifying credentials...[/]")
+    try:
+        llm = get_llm(provider, model_name, api_key=api_key)
+        response = llm.invoke("Hello, are you online?")
+        console.print(f"[green]Success![/] AI replied: [italic]\"{response.content}\"[/]")
+    except Exception as e:
+        console.print(f"[bold red]Verification Failed![/] {str(e)}")
+        if not Confirm.ask("Save configuration anyway?"):
+            console.print("[red]Setup aborted.[/]")
+            return
+
+    # 6. Save
+    save_config(provider, model_name, api_key, brave_key)
+    console.print("\n[bold green]Configuration Saved! 🚀[/]")
+    console.print("\nYou can now run the agent with:\n[bold]python main.py[/]")
 
 if __name__ == "__main__":
-    app = SetupWizard()
-    app.run()
+    try:
+        main()
+    except KeyboardInterrupt:
+        console.print("\n[red]Setup cancelled.[/]")
