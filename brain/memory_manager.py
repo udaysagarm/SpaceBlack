@@ -153,7 +153,7 @@ def build_system_prompt() -> str:
     OS: {os_name} ({os_release})
     User: {user}
     Home: {home}
-    CWD: {cwd}
+    CWD: {cwd} (Current working context)
     Time: {now}
 
     [INSTRUCTIONS]
