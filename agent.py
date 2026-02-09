@@ -115,6 +115,10 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
             config = load_config()
             llm = get_llm(config["provider"], config["model"], temperature=0.3)
             res = llm.invoke(prompt)
+            # Handle list return from invoke (rare but possible)
+            if isinstance(res, list):
+                res = res[0]
+            
             content = res.content
             if isinstance(content, list): content = " ".join([str(p) for p in content])
             response = content.strip()
