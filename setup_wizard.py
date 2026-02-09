@@ -19,16 +19,20 @@ class SetupWizard(App):
     }
     
     Container {
-        width: 60;
-        height: auto;
+        width: 90%;
+        max-width: 80;
+        min-width: 40;
+        height: 80%;
+        max-height: 40;
         border: solid green;
-        padding: 2;
+        padding: 1 2;
         background: $surface;
+        overflow-y: auto;
     }
     
     Label {
         margin-top: 1;
-        margin-bottom: 1;
+        margin-bottom: 0;
     }
     
     Button {
@@ -36,42 +40,56 @@ class SetupWizard(App):
         width: 100%;
     }
     
-    .error {
-        color: red;
-        text-align: center;
-        margin-top: 1;
-    }
-    
-    .success {
-        color: green;
-        text-align: center;
-        margin-top: 1;
-    }
+    .error { color: red; text-align: center; margin-top: 1; }
+    .success { color: green; text-align: center; margin-top: 1; }
 
     .field-group {
-        margin-bottom: 2;
+        margin-bottom: 1;
+        height: auto;
     }
 
     .help-text {
         color: $text-muted;
         text-style: italic;
         margin-top: 0;
-        margin-bottom: 0;
+        margin-bottom: 1;
+        height: auto;
     }
 
-    /* Fix Visibility */
+    /* High Contrast Inputs */
     Input {
-        background: $boost;
-        border: tall $background;
+        background: #1a1a2e; 
+        border: solid $accent;
         height: 3;
-        color: $text;
+        min-height: 3;
+        color: white;
+        width: 100%;
+    }
+    
+    Input:focus {
+        border: double $primary;
     }
     
     Select {
-        background: $boost;
-        border: tall $background;
+        background: #1a1a2e;
+        border: solid $accent;
         height: 3;
-        color: $text;
+        min-height: 3;
+        color: white;
+        width: 100%;
+    }
+    
+    Select:focus {
+        border: double $primary;
+    }
+    
+    SelectCurrent {
+        background: #1a1a2e;
+        color: white;
+    }
+    
+    SelectCurrent > Static {
+        color: white;
     }
     """
 
