@@ -140,17 +140,21 @@ def build_system_prompt() -> str:
     tools_content = read_file_safe(TOOLS_FILE, "Tools unknown.")
     
     # Dynamic Context
+    import platform
     cwd = os.getcwd()
     user = os.getlogin()
     home = os.path.expanduser("~")
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    os_name = platform.system()
+    os_release = platform.release()
     
     prompt = f"""
     [SYSTEM CONTEXT]
-    Running on: {user}'s terminal
-    Home Dir: {home}
+    OS: {os_name} ({os_release})
+    User: {user}
+    Home: {home}
     CWD: {cwd}
-    Date/Time: {now}
+    Time: {now}
 
     [INSTRUCTIONS]
     {agents_content}
