@@ -10,6 +10,7 @@
 -   **Web Access**: Real-time internet search using **Brave Search** to fetch current events and documentation.
 -   **Terminal UI (TUI)**: built with [Textual](https://textual.textualize.io/) for a beautiful, responsive CLI experience.
 -   **Multi-Provider**: Switch between Google Gemini, OpenAI, and Anthropic models on the fly using `/config`.
+-   **Cross-Platform**: Automatically detects your OS (Windows, macOS, Linux) and adapts commands accordingly (PowerShell vs Bash).
 -   **Privacy-First**: All memory and configuration files are stored locally. Sensitive data is excluded from Git.
 
 ## Installation
@@ -58,6 +59,12 @@ python main.py
     -   `USER.md`: User profile and preferences.
     -   `memory/`: Daily logs and long-term storage.
     -   `SCHEDULE.json`: Queue for time-based tasks.
+
+## Documentation
+For detailed guides, check the `docs/` folder:
+-   [**Installation Guide**](docs/INSTALLATION.md)
+-   [**User Manual**](docs/USAGE.md)
+-   [**Architecture & Tech Stack**](docs/ARCHITECTURE.md)
 
 ## Privacy & Safety
 -   **File Safety**: The agent cannot run dangerous commands (`rm`, `mv`, `dd`) without explicit confirmation.
