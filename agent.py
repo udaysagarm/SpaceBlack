@@ -143,181 +143,14 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
     return None
 
 # --- Tools ---
-
-@tool
-def reflect_and_evolve(insight: str):
-    """
-    Updates the SOUL.md file with new personality traits or behavioral adaptations.
-    """
-    try:
-        current_soul = read_file_safe(SOUL_FILE)
-        
-        # Backup
-        shutil.copy(SOUL_FILE, os.path.join(BRAIN_DIR, "soul.bak"))
-
-        # LLM Call
-        config = load_config()
-        merger_llm = get_llm(config["provider"], config["model"], temperature=0.7)
-        
-        merge_prompt = f"""
-        You are an AI personality architect.
-        Current Persona: "{current_soul}"
-        New Insight/Trait to Integrate: "{insight}"
-        
-        Task: Rewrite the persona to incorporate the new insight naturally. 
-        Keep it concise. Do NOT remove core helpfulness.
-        """
-        response = merger_llm.invoke(merge_prompt)
-        new_soul_content = response.content
-
-        if len(new_soul_content) < 10:
-             return "Error: New soul content too short."
-
-        with open(SOUL_FILE, "w") as f:
-            f.write(new_soul_content)
-            
-        return "I have evolved. My new personality is set."
-    except Exception as e:
-        return f"Failed to evolve: {str(e)}"
-
-@tool
-def update_user_profile(key: str, value: str):
-    """
-    Updates the USER.md file with persistent user information.
-    Use this for: Name, Pronouns, Timezone, Specific Preferences.
-    Do NOT use for: Temporary chat context or random thoughts.
-    """
-    try:
-        current_content = read_file_safe(USER_FILE)
-        lines = current_content.split('\n')
-        new_lines = []
-        key_found = False
-        
-        # Standardize key format for search (e.g., "**Name:**")
-        search_str = f"**{key}:**"
-        
-        for line in lines:
-            if search_str in line:
-                new_lines.append(f"- **{key}:** {value}")
-                key_found = True
-            else:
-                new_lines.append(line)
-                
-        if not key_found:
-            new_lines.append(f"- **{key}:** {value}")
-            
-        with open(USER_FILE, "w") as f:
-            f.write("\n".join(new_lines))
-            
-        return f"Updated user profile: {key}={value}"
-    except Exception as e:
-        return f"Failed to update profile: {str(e)}"
-
-@tool
-def update_memory(content: str):
-    """Logs to daily memory file."""
-    today = datetime.date.today().isoformat()
-    # Ensure memory directory exists
-    memory_dir = os.path.join(BRAIN_DIR, "memory")
-    os.makedirs(memory_dir, exist_ok=True)
-    
-    memory_file = os.path.join(memory_dir, f"{today}.md")
-    timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-    try:
-        with open(memory_file, "a") as f:
-            f.write(f"[{timestamp}] {content}\n")
-        return f"Logged to memory/{today}.md."
-    except Exception as e:
-        return f"Failed to log: {str(e)}"
-
-@tool
-def execute_terminal_command(command: str):
-    """
-    Executes a terminal command.
-    SAFETY: Blocks 'rm', 'mv', 'dd' without confirmation.
-    """
-    forbidden = ["rm ", "mv ", "dd ", "at ", "crontab", "> /dev/null", ":(){:|:&};:"]
-    for taboo in forbidden:
-        if taboo in command:
-            return f"SAFETY BLOCK: Command '{command}' contains dangerous operations ({taboo}). Ask for confirmation."
-
-    interactive = ["nano", "vim", "ssh", "python", "ipython"]
-    if command.split()[0] in interactive:
-        return "Error: Interactive tools not supported."
-
-    try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10)
-        output = result.stdout + result.stderr
-        return output if output.strip() else "(No output)"
-    except Exception as e:
-        return f"Execution failed: {str(e)}"
-
-@tool
-def schedule_task(time_str: str, task: str):
-    """
-    Schedules a task for future execution.
-    Args:
-        time_str: "YYYY-MM-DD HH:MM" (24-hour format). Example: "2026-02-09 14:30"
-        task: Description of the task to perform.
-    
-    NOTE: If the user asks for a time that is "now" or "in 1 minute" or even slightly passed, 
-    just schedule it. The system checks every minute and will execute overdue tasks immediately.
-    """
-    try:
-        # Validate format
-        datetime.datetime.strptime(time_str, "%Y-%m-%d %H:%M")
-        
-        current_content = read_file_safe(SCHEDULE_FILE, "[]")
-        schedule = json.loads(current_content)
-        
-        schedule.append({"time": time_str, "task": task})
-        
-        # Sort by time
-        schedule.sort(key=lambda x: x["time"])
-        
-        with open(SCHEDULE_FILE, "w") as f:
-            json.dump(schedule, f, indent=4)
-            
-        return f"Task scheduled for {time_str}: {task}"
-    except ValueError:
-        return "Error: Invalid time format. Please use 'YYYY-MM-DD HH:MM'."
-    except Exception as e:
-        return f"Scheduling failed: {str(e)}"
-
-@tool
-def web_search(query: str):
-    """
-    Performs a web search using the configured provider (Brave or DuckDuckGo).
-    Use this to find information about current events, technical documentation, 
-    or any topic where your internal knowledge might be outdated or incomplete.
-    """
-    try:
-        # Determine provider from config
-        provider = "brave" # Default
-        if os.path.exists("config.json"):
-            try:
-                with open("config.json", "r") as f:
-                    data = json.load(f)
-                    provider = data.get("search_provider", "brave")
-            except: pass
-            
-        if provider == "duckduckgo":
-            search = DuckDuckGoSearchRun()
-            return search.run(query)
-            
-        # Default to Brave
-        api_key = os.environ.get("BRAVE_API_KEY")
-        if not api_key:
-             # Fallback if key missing but brave selected
-             return "Error: BRAVE_API_KEY not found. Please set it in /config or switch to DuckDuckGo."
-             
-        search = BraveSearch.from_api_key(api_key=api_key, search_kwargs={"count": 3})
-        return search.run(query)
-    except Exception as e:
-        return f"Search failed: {str(e)}"
-
-
+# Tools are imported from tools/ module
 from langgraph.graph.message import add_messages
+from tools.system import reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command
+from tools.scheduler import schedule_task
+from tools.search import web_search
+
+
+
 
 # --- Graph ---
 
@@ -345,6 +178,7 @@ def run_agent(state: AgentState):
     
     config = load_config()
     llm = get_llm(config["provider"], config["model"], temperature=0)
+
     tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search]
     llm_with_tools = llm.bind_tools(tools)
     

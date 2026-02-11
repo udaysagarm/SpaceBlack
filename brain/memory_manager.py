@@ -179,4 +179,4 @@ def load_config():
                 return json.load(f)
         except:
             pass
-    return {"provider": "google", "model": "gemini-flash-latest"}
+    return {"provider": "google", "model": "gemini-2.0-flash"}

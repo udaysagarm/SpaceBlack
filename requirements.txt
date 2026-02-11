@@ -7,3 +7,4 @@ langchain-anthropic
 textual
 python-dotenv
 duckduckgo-search
+google-generativeai

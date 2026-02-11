@@ -18,7 +18,7 @@ Unlike traditional databases, Space Black uses **Markdown Files** as its databas
 1.  **Transparency**: You can read and edit your agent's memory with any text editor.
 2.  **Portability**: Easy to sync via Git or Dropbox.
 
--   `brain/short_term/`: (In-memory) Active conversation context.
+
 -   `brain/memory/YYYY-MM-DD.md`: Daily logs. The agent writes thoughts and actions here.
 -   `brain/SOUL.md`: The "System Prompt" that defines the persona.
 -   `brain/USER.md`: Structured facts about the user.

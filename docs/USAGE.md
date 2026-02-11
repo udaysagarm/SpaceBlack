@@ -17,7 +17,7 @@ Just type naturally!
 ### Configuration (`/config`)
 Type `/config` in the input bar to open the **Settings Menu**.
 -   **AI Provider**: Switch between Google (Gemini), OpenAI (GPT-4), or Anthropic (Claude).
--   **Model Name**: Manually override the model (e.g., `gemini-1.5-flash`, `gpt-4o-mini`).
+-   **Model Name**: Manually override the model (e.g., `gemini-2.0-flash`, `gpt-4o-mini`).
 -   **Web Search**: Toggle between Brave (API key required) and DuckDuckGo (Free).
 -   **API Keys**: Update your keys securely without editing files.
 
@@ -40,5 +40,50 @@ The agent's memory and personality are stored in the `brain/` folder. You can ed
 -   `brain/USER.md`: Your profile. The agent learns about you here.
 -   `brain/AGENTS.md`: The "Constitution" and core rules.
 
+
 ### Reset
 To reset the agent's memory of today, simply delete the file in `brain/memory/YYYY-MM-DD.md`.
+
+## Collaboration & Sharing
+
+### How to Share Code
+If you want to share this project with others (e.g., via GitHub), you don't need to worry about your personal data or environment files. The project is configured to **ignore** them automatically:
+-   `.venv/`: Your local Python environment (too big, machine-specific).
+-   `.env`: Your API keys.
+-   `brain/USER.md`: Your personal details.
+-   `brain/memory/`: Your chat logs.
+
+### Setting Up on a New Machine
+When someone clones your code, they will need to set it up. 
+
+**Option A: The Easy Way (Professional)**
+1.  **First Time Setup (Run Once)**:
+    ```bash
+    ./spaceblack onboard
+    ```
+2.  **Daily Usage (Run Anytime)**:
+    ```bash
+    ./spaceblack start
+    ```
+    *(On Windows, just type `spaceblack onboard` or `spaceblack start` without the `./`)*
+
+**Option B: The Manual Way**
+1.  **Create Environment**:
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate  # Mac/Linux
+    # .venv\Scripts\activate   # Windows
+    ```
+
+2.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **Run**:
+    ```bash
+    python main.py
+    ```
+
+The agent will automatically create a fresh `USER.md` for them!
+

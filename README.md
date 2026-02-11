@@ -46,7 +46,7 @@ python main.py
 -   **Chat**: Just type naturally. "What's the weather?", "Refactor this code", etc.
 -   **Schedule**: "Remind me to check logs in 5 minutes" or "Create a backup folder at 16:00".
 -   **Web Search**: "Search for the latest Python version."
--   **Config**: Type `/config` to open the settings menu. You can change the AI provider and model (e.g., `gemini-1.5-pro`, `gpt-4o`) instantly.
+-   **Config**: Type `/config` to open the settings menu. You can change the AI provider and model (e.g., `gemini-2.0-flash`, `gpt-4o`) instantly.
 -   **Exit**: Type `exit` or `quit`.
 
 ## Architecture

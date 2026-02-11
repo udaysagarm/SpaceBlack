@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# spaceblack - CLI Wrapper
+
+COMMAND=$1
+
+if [ "$COMMAND" == "onboard" ]; then
+    echo "Starting One-Time Setup..."
+    ./scripts/setup.sh
+elif [ "$COMMAND" == "start" ]; then
+    echo "Launching Space Black..."
+    ./scripts/run.sh
+else
+    echo "Usage: ./spaceblack [command]"
+    echo ""
+    echo "Commands:"
+    echo "  onboard  -> Run this ONCE when you first install the app."
+    echo "  start    -> Run this EVERY TIME you want to use the app."
+    echo ""
+fi
