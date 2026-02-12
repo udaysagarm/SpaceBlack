@@ -4,7 +4,7 @@ import json
 import unittest
 from unittest.mock import patch, MagicMock
 from brain.llm_factory import get_llm
-from agent_logic import load_config
+from agent import load_config
 
 
 class TestLLMFactory(unittest.TestCase):

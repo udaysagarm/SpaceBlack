@@ -18,7 +18,18 @@ def save_config(provider, model_name, api_key, brave_key):
     # 1. Save config.json
     config_data = {
         "provider": provider,
-        "model": model_name
+        "model": model_name,
+        "skills": {
+            "openweather": {
+                "enabled": False,
+                "api_key": ""
+            },
+            "telegram": {
+                "enabled": False,
+                "bot_token": "",
+                "allowed_user_id": ""
+            }
+        }
     }
     # Persist search provider if it was already there, or default to brave
     if os.path.exists(CONFIG_FILE):

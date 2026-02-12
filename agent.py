@@ -148,6 +148,7 @@ from langgraph.graph.message import add_messages
 from tools.system import reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command
 from tools.scheduler import schedule_task
 from tools.search import web_search
+from tools.skills.openweather import get_current_weather
 
 
 
@@ -180,6 +181,11 @@ def run_agent(state: AgentState):
     llm = get_llm(config["provider"], config["model"], temperature=0)
 
     tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search]
+    
+    # Dynamic Skills
+    if config.get("skills", {}).get("openweather", {}).get("enabled", False):
+        tools.append(get_current_weather)
+
     llm_with_tools = llm.bind_tools(tools)
     
     response = llm_with_tools.invoke(messages)
@@ -188,7 +194,7 @@ def run_agent(state: AgentState):
 def build_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", run_agent)
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search, get_current_weather]
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
     

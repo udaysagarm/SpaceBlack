@@ -1,8 +1,7 @@
 
 from textual.app import App, ComposeResult
-from textual.app import App, ComposeResult
 from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Header, Footer, Input, Static, Label, Select, Button, TabbedContent, TabPane
+from textual.widgets import Header, Footer, Input, Static, Label, Select, Button, TabbedContent, TabPane, Switch, RadioSet, RadioButton
 from textual.screen import ModalScreen
 from textual import work, on
 from langchain_core.messages import HumanMessage
@@ -69,34 +68,40 @@ class ConfigScreen(ModalScreen):
     CSS = """
     ConfigScreen {
         align: center middle;
+        background: $surface 50%;
     }
     
     #dialog {
         width: 90%;
         max-width: 80;
-        min-width: 40;
-        height: 80%;
-        max-height: 40;
-        border: solid green;
+        height: 90%;
+        max-height: 45;
+        border: solid $accent;
         padding: 1 2;
         background: $surface;
         overflow-y: auto;
     }
     
-    Label {
-        margin-top: 0;
-        margin-bottom: 0;
-        height: auto;
-    }
-    
-    Button {
-        margin-top: 1;
+    .config-title {
+        text-align: center;
+        margin-bottom: 2;
+        color: $text;
+        text-style: bold;
+        background: $primary;
+        color: white;
+        padding: 1;
         width: 100%;
-        min-width: 10;
+        border-bottom: solid $accent;
     }
     
-    .error { color: red; }
-    .success { color: green; }
+    .section-header {
+        margin-top: 2;
+        margin-bottom: 1;
+        color: $accent;
+        text-style: bold;
+        border-bottom: solid $secondary;
+        padding-bottom: 0;
+    }
 
     .field-group {
         margin-bottom: 1;
@@ -110,26 +115,12 @@ class ConfigScreen(ModalScreen):
         height: 1;
     }
 
-    .config-title {
-        text-align: center;
-        margin-bottom: 1;
-        height: 1;
-    }
-    
-    .section-header {
-        margin-top: 1;
-        margin-bottom: 1;
-        color: $accent;
-        text-style: bold;
-        height: 1;
-    }
-
     .btn-group {
-        margin-top: 1;
+        margin-top: 2;
         height: 3;
     }
 
-    /* High Contrast Inputs */
+    /* Input Styling */
     Input {
         background: $panel; 
         border: solid $accent;
@@ -143,26 +134,17 @@ class ConfigScreen(ModalScreen):
         border: double $primary;
     }
     
-    Select {
-        background: #1a1a2e;
-        border: solid $accent;
-        height: 3;
-        min-height: 3;
-        color: white;
+    /* RadioSet Styling */
+    RadioSet {
+        background: $panel;
+        border: solid $secondary;
+        padding: 1;
+        height: auto;
+        margin-bottom: 1;
+    }
+    
+    RadioButton {
         width: 100%;
-    }
-    
-    Select:focus {
-        border: double $primary;
-    }
-    
-    SelectCurrent {
-        background: #1a1a2e;
-        color: white;
-    }
-    
-    SelectCurrent > Static {
-        color: white;
     }
     """
 
@@ -182,19 +164,17 @@ class ConfigScreen(ModalScreen):
              except: pass
 
         with Container(id="dialog"):
-            yield Label("[bold]Agent Configuration[/]", classes="field-group config-title")
+            yield Label("⚙️ Agent Configuration", classes="field-group config-title")
             
             # AI Section
             yield Label("🧠 AI Brain", classes="section-header")
             
             with Vertical(classes="field-group"):
                 yield Label("Select AI Provider:")
-                yield Select(
-                    options=[("Google Gemini", "google"), ("OpenAI", "openai"), ("Anthropic", "anthropic")],
-                    id="provider_select",
-                    value=current_provider,
-                    allow_blank=False
-                )
+                with RadioSet(id="provider_radioset"):
+                    yield RadioButton("Google Gemini", id="rb_google", value=(current_provider == "google"))
+                    yield RadioButton("OpenAI", id="rb_openai", value=(current_provider == "openai"))
+                    yield RadioButton("Anthropic", id="rb_anthropic", value=(current_provider == "anthropic"))
             
             with Vertical(classes="field-group"):
                 yield Label("AI Provider API Key:")
@@ -211,12 +191,9 @@ class ConfigScreen(ModalScreen):
             
             with Vertical(classes="field-group"):
                 yield Label("Search Provider:")
-                yield Select(
-                    options=[("Brave Search (Recommended)", "brave"), ("DuckDuckGo (Free/Slower)", "duckduckgo")],
-                    id="search_provider_select",
-                    value=current_search_provider,
-                    allow_blank=False
-                )
+                with RadioSet(id="search_provider_radioset"):
+                    yield RadioButton("Brave Search (Recommended)", id="rb_brave", value=(current_search_provider == "brave"))
+                    yield RadioButton("DuckDuckGo (Free/Slower)", id="rb_duckduckgo", value=(current_search_provider == "duckduckgo"))
             
             with Vertical(classes="field-group"):
                 yield Label("Brave Search API Key:")
@@ -237,13 +214,34 @@ class ConfigScreen(ModalScreen):
             self.save_config()
 
     def save_config(self):
-        provider = self.query_one("#provider_select").value
+        # Get provider from RadioSet
+        provider_rs = self.query_one("#provider_radioset", RadioSet)
+        provider = "google" # default
+        if provider_rs.pressed_button:
+            # Map ID to value
+            pid = provider_rs.pressed_button.id
+            if pid == "rb_google": provider = "google"
+            elif pid == "rb_openai": provider = "openai"
+            elif pid == "rb_anthropic": provider = "anthropic"
+
         api_key = self.query_one("#api_key_input").value
         model = self.query_one("#model_input").value
         brave_key = self.query_one("#brave_key_input").value
         
+        # Get search provider from RadioSet
+        search_rs = self.query_one("#search_provider_radioset", RadioSet)
+        search_provider = "brave" # default
+        if search_rs.pressed_button:
+             sid = search_rs.pressed_button.id
+             if sid == "rb_brave": search_provider = "brave"
+             elif sid == "rb_duckduckgo": search_provider = "duckduckgo"
+
         # 1. Update Config File
-        config_data = {"provider": provider, "model": model}
+        config_data = {
+            "provider": provider, 
+            "model": model,
+            "search_provider": search_provider
+        }
         try:
              with open(CONFIG_FILE, "w") as f:
                  json.dump(config_data, f, indent=4)
@@ -272,6 +270,203 @@ class ConfigScreen(ModalScreen):
             
             # Update os.environ
             os.environ[env_var] = api_key
+            
+        # Update Brave Key if provided
+        if brave_key:
+             lines = []
+             if os.path.exists(ENV_FILE):
+                 with open(ENV_FILE, "r") as f: lines = f.readlines()
+             lines = [l for l in lines if not l.startswith("BRAVE_API_KEY=")]
+             lines.append(f"BRAVE_API_KEY={brave_key}\n")
+             with open(ENV_FILE, "w") as f: f.writelines(lines)
+             os.environ["BRAVE_API_KEY"] = brave_key
+
+        self.dismiss(result=True)
+
+
+
+class SkillsScreen(ModalScreen):
+    """Modal screen for managing agent skills."""
+    CSS = """
+    SkillsScreen {
+        align: center middle;
+        background: $surface 50%;
+    }
+    
+    #skills-dialog {
+        width: 85%;
+        max-width: 80;
+        height: 85%;
+        max-height: 45;
+        border: solid $accent;
+        padding: 1 2;
+        background: $surface;
+        overflow-y: auto;
+    }
+    
+    .config-title {
+        text-align: center;
+        margin-bottom: 2;
+        color: $text;
+        text-style: bold;
+        background: $primary;
+        color: white;
+        padding: 1;
+        width: 100%;
+        border-bottom: solid $accent;
+    }
+
+    .help-text {
+        color: $text-muted;
+        text-style: italic;
+        margin-top: 0;
+        margin-bottom: 1;
+        height: auto;
+    }
+    
+    .skill-row {
+        height: auto;
+        margin-bottom: 2;
+        border: solid $secondary;
+        padding: 1;
+        background: $panel;
+    }
+    
+    .skill-header {
+        height: 3;
+        margin-bottom: 1;
+        align: center middle;
+    }
+    
+    .skill-name {
+        text-style: bold;
+        color: $accent;
+        width: 1fr;
+        content-align: left middle;
+    }
+    
+    Switch {
+        height: auto;
+        dock: right;
+    }
+
+    .api-key-label {
+        margin-top: 1;
+        color: $text;
+    }
+    
+    .api-key-input {
+        margin-top: 0;
+        border: solid $accent;
+        background: $surface;
+    }
+    
+    .description {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        # Load current config to see enabled skills
+        skills_config = {}
+        if os.path.exists(CONFIG_FILE):
+             try:
+                 with open(CONFIG_FILE, "r") as f:
+                     data = json.load(f)
+                     skills_config = data.get("skills", {})
+             except: pass
+        
+        # OpenWeather Config
+        openweather_cfg = skills_config.get("openweather", {})
+        ow_enabled = openweather_cfg.get("enabled", False)
+        ow_api_key = openweather_cfg.get("api_key", "")
+
+        # Telegram Config
+        telegram_cfg = skills_config.get("telegram", {})
+        tg_enabled = telegram_cfg.get("enabled", False)
+        tg_bot_token = telegram_cfg.get("bot_token", "")
+        tg_user_id = telegram_cfg.get("allowed_user_id", "")
+
+        with Container(id="skills-dialog"):
+            yield Label("⚡ Agent Skills Manager", classes="config-title")
+            
+            # OpenWeather Skill
+            with Vertical(classes="skill-row"):
+                with Horizontal(classes="skill-header"):
+                    yield Label("🌦️ OpenWeather", classes="skill-name")
+                    yield Switch(value=ow_enabled, id="openweather_switch")
+                
+                yield Label("Provides real-time weather information for any city.", classes="description")
+                yield Label("API Key:", classes="api-key-label")
+                yield Input(value=ow_api_key, placeholder="Enter OpenWeather API Key", password=True, id="openweather_key", classes="api-key-input")
+            
+            # Telegram Bot Skill
+            with Vertical(classes="skill-row"):
+                with Horizontal(classes="skill-header"):
+                    yield Label("🤖 Telegram Bot Gateway", classes="skill-name")
+                    yield Switch(value=tg_enabled, id="telegram_switch")
+                
+                yield Label("Chat with your agent remotely via Telegram.", classes="description")
+                
+                yield Label("Bot Token:", classes="api-key-label")
+                yield Input(value=tg_bot_token, placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11", password=True, id="telegram_token", classes="api-key-input")
+                
+                yield Label("Allowed User ID:", classes="api-key-label")
+                yield Input(value=tg_user_id, placeholder="123456789", id="telegram_user_id", classes="api-key-input")
+                yield Label("Required for security. Get yours from @userinfobot.", classes="help-text")
+
+            with Horizontal(classes="field-group btn-group"):
+                yield Button("Save & Close", variant="primary", id="save_skills_btn")
+                yield Button("Cancel", variant="error", id="cancel_skills_btn")
+
+    @on(Button.Pressed)
+    def handle_buttons(self, event: Button.Pressed):
+        if event.button.id == "cancel_skills_btn":
+            self.dismiss()
+        elif event.button.id == "save_skills_btn":
+            self.save_skills()
+
+    def save_skills(self):
+        # OpenWeather Values
+        ow_enabled = self.query_one("#openweather_switch").value
+        ow_key = self.query_one("#openweather_key").value
+        
+        # Telegram Values
+        tg_enabled = self.query_one("#telegram_switch").value
+        tg_token = self.query_one("#telegram_token").value
+        tg_user_id = self.query_one("#telegram_user_id").value
+
+        # Load existing config
+        config_data = {}
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    config_data = json.load(f)
+            except: pass
+            
+        if "skills" not in config_data:
+            config_data["skills"] = {}
+            
+        # Update OpenWeather
+        config_data["skills"]["openweather"] = {
+            "enabled": ow_enabled,
+            "api_key": ow_key
+        }
+
+        # Update Telegram
+        config_data["skills"]["telegram"] = {
+            "enabled": tg_enabled,
+            "bot_token": tg_token,
+            "allowed_user_id": tg_user_id
+        }
+        
+        try:
+             with open(CONFIG_FILE, "w") as f:
+                 json.dump(config_data, f, indent=4)
+        except Exception as e:
+             self.notify(f"Error saving skills: {e}", severity="error")
+             return
 
         self.dismiss(result=True)
 
@@ -410,6 +605,10 @@ class AgentInterface(App):
             
         if user_input.lower() == "/config":
             self.push_screen(ConfigScreen(), self.on_config_closed)
+            return
+
+        if user_input.lower() == "/skills":
+            self.push_screen(SkillsScreen(), self.on_config_closed)
             return
 
         chat_history = self.query_one("#chat-history")

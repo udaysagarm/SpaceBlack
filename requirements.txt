@@ -8,3 +8,5 @@ textual
 python-dotenv
 duckduckgo-search
 google-generativeai
+httpx
+python-telegram-bot
