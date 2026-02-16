@@ -1,36 +1,19 @@
-# TOOLS.md - Local Notes
+Lists available tools and specific, strict rules on how and when the agent is allowed to call them.
 
-Skills define *how* tools work. This file is for *your* specifics — the stuff that's unique to your setup.
+# Available Tools
 
-## What Goes Here
+This file lists the capabilities currently enabled for your Ghost Agent.
 
-Things like:
-- Camera names and locations
-- SSH hosts and aliases  
-- Preferred voices for TTS
-- Speaker/room names
-- Device nicknames
-- Anything environment-specific
+## System & Memory
+-   **reflect_and_evolve**: I can update my own "Soul" (System Prompt) to adapt my personality and behavior based on our interactions.
+-   **update_memory**: I can save important facts, events, and context to my long-term memory logs (`brain/memory/`).
+-   **update_user_profile**: I can learn and store structured information about you (preferences, tech stack) in `brain/USER.md`.
+-   **execute_terminal_command**: I can run non-interactive shell commands on your machine (e.g., `ls`, `git status`, `cat file`).
 
-## Examples
+## Productivity
+-   **schedule_task**: I can schedule reminders or command executions for a specific time in the future.
+-   **web_search**: I can search the internet (via Brave or DuckDuckGo) to find real-time information, documentation, or news.
 
-```markdown
-### Cameras
-- living-room → Main area, 180° wide angle
-- front-door → Entrance, motion-triggered
-
-### SSH
-- home-server → 192.168.1.100, user: admin
-
-### TTS
-- Preferred voice: "Nova" (warm, slightly British)
-- Default speaker: Kitchen HomePod
-```
-
-## Why Separate?
-
-Skills are shared. Your setup is yours. Keeping them apart means you can update skills without losing your notes, and share skills without leaking your infrastructure.
-
----
-
-Add whatever helps you do your job. This is your cheat sheet.
+## Skills (Modular)
+-   **get_current_weather**: (If openweather api enabled) I can fetch real-time weather data for any city.
+-   **Telegram Gateway**: (If telegram bot configured/enabled) I can interact with you remotely via a Telegram bot.

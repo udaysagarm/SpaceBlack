@@ -20,7 +20,7 @@ else
 fi
 
 # 3. Activation & Installation
-echo "⬇️  Installing dependencies..."
+echo "⬇Installing dependencies..."
 source .venv/bin/activate
 
 # Upgrade pip just in case
@@ -31,7 +31,7 @@ if pip install -r requirements.txt; then
     echo "Setup Complete!"
     echo " "
     echo "To start the agent, run:"
-    echo "   ./spaceblack onboard"
+    echo "   ./spaceblack start"
 else
     echo "❌ Dependencies failed to install."
     exit 1

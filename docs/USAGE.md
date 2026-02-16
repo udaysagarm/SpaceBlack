@@ -47,7 +47,7 @@ The agent autonomously decides when to search the web based on your prompt.
 The agent's memory and personality are stored in the `brain/` directory. While you can edit these files, do so with caution.
 -   `brain/SOUL.md`: Defines the agent's personality.
 -   `brain/USER.md`: Stores your user profile and preferences.
--   `brain/AGENTS.md`: Contains the system constitution and core rules.
+-   `brain/AGENTS.md`: Contains the system instructions and core rules.
 
 ### Reset Context
 To reset the agent's memory for the current day, delete the corresponding log file in `brain/memory/YYYY-MM-DD.md`.
