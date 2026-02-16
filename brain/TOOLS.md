@@ -17,3 +17,4 @@ This file lists the capabilities currently enabled for your Ghost Agent.
 ## Skills (Modular)
 -   **get_current_weather**: (If openweather api enabled) I can fetch real-time weather data for any city.
 -   **Telegram Gateway**: (If telegram bot configured/enabled) I can interact with you remotely via a Telegram bot.
+-   **visit_page**: (Headless Browser) I can visit and "read" dynamic websites by rendering them with Chromium. Useful when standard scraping fails or for complex SPAs.

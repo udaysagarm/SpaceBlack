@@ -10,3 +10,8 @@ duckduckgo-search
 google-generativeai
 httpx
 python-telegram-bot
+
+# Browser Automation
+playwright
+beautifulsoup4
+html2text

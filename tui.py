@@ -534,7 +534,16 @@ class AgentInterface(App):
             # Main Chat Area
             with Container(id="chat-container"):
                 with Vertical(id="chat-history"):
-                    yield Static("System: Agent initialized. Type '/config' to change settings or 'exit' to quit.", classes="agent")
+                    banner = """
+  ____                         ____  _            _      
+ / ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __ 
+ \___ \| '_ \ / _` |/ __/ _ \ |  _ \| |/ _` |/ __| |/ / 
+  ___) | |_) | (_| | (_|  __/ | |_) | | (_| | (__|   <  
+ |____/| .__/ \__,_|\___\___| |____/|_|\__,_|\___|_|\_\\
+       |_|                                              
+"""
+                    yield Static(f"[bold green]{banner}[/]", classes="message")
+                    yield Static("System: Ghost initialised. Type /config to change settings, Type /skills to enable/disable skills. 'exit' to quit.", classes="agent")
                 yield Input(placeholder="Type your command or message here...", id="chat_input")
         
         yield Footer()

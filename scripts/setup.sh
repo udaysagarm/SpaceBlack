@@ -29,6 +29,13 @@ pip install --upgrade pip > /dev/null 2>&1
 if pip install -r requirements.txt; then
     echo " "
     echo "Setup Complete!"
+    
+    # Check for Playwright and install browsers if needed
+    if pip show playwright > /dev/null 2>&1; then
+        echo "🌍 Installing Playwright browsers..."
+        playwright install chromium
+    fi
+
     echo " "
     echo "To start the agent, run:"
     echo "   ./spaceblack start"

@@ -30,8 +30,13 @@ def reflect_and_evolve(insight: str):
         Current Persona: "{current_soul}"
         New Insight/Trait to Integrate: "{insight}"
         
-        Task: Rewrite the persona to incorporate the new insight naturally. 
-        Keep it concise. Do NOT remove core helpfulness.
+        Task: Rewrite the ENTIRE `SOUL.md` file to incorporate the new insight naturally.
+        
+        CRITICAL RULES:
+        1. Output ONLY the new file content.
+        2. Do NOT add conversational filler (e.g. "Here is the new file").
+        3. The file MUST start with "# SOUL.md".
+        4. Keep the original structure (Core Truths, Boundaries, Vibe).
         """
         response = merger_llm.invoke(merge_prompt)
         # Handle list return from invoke
@@ -41,8 +46,9 @@ def reflect_and_evolve(insight: str):
         new_soul_content = response.content
         if isinstance(new_soul_content, list): new_soul_content = " ".join([str(p) for p in new_soul_content])
 
-        if len(new_soul_content) < 10:
-             return "Error: New soul content too short."
+        # Validation: content must be substantial and start with header
+        if len(new_soul_content) < 100 or "# SOUL.md" not in new_soul_content:
+             return f"Error: LLM returned invalid content. Evolution aborted to protect SOUL.md. Output: {new_soul_content[:50]}..."
 
         with open(SOUL_FILE, "w") as f:
             f.write(new_soul_content)

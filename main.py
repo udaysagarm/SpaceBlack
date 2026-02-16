@@ -41,6 +41,20 @@ def main():
     # We can use subprocess to run "python tui.py" to ensure a fresh process 
     # and to properly load the new .env file we just wrote (if we rely on dotenv loading at startup)
     
+    # Print "Space Black" banner (Simulating figlet)
+    # Color: \033[38;2;27;242;34m (Green)
+    banner = """
+\033[38;2;27;242;34m
+  ____                         ____  _            _      
+ / ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __ 
+ \___ \| '_ \ / _` |/ __/ _ \ |  _ \| |/ _` |/ __| |/ / 
+  ___) | |_) | (_| | (_|  __/ | |_) | | (_| | (__|   <  
+ |____/| .__/ \__,_|\___\___| |____/|_|\__,_|\___|_|\_\\
+       |_|                                              
+\033[0m"""
+    print(banner)
+    print("System: Ghost initialised.")
+
     try:
         subprocess.run([sys.executable, "tui.py"])
     except KeyboardInterrupt:
