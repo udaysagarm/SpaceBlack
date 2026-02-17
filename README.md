@@ -14,7 +14,10 @@
 -   **Terminal UI (TUI)**: Built with Textual for a responsive CLI experience.
 -   **Modular Skills**: Extensible system for integrations like OpenWeather and Telegram. (Requires restart to enable/disable)
 -   **Multi-Provider**: Switch between Google Gemini, OpenAI, and Anthropic models dynamically.
--   **Privacy-First**: All memory and configuration files are stored locally. Sensitive data is excluded from Git.
+-   **Terminal-Native**: Your pair programmer in the shell. Unlike chat-based agents (like OpenClaw), Space Black lives in your dev environment with a rich TUI.
+-   **Direct File Access**: Safe, native file manipulation (`read_file`, `write_file`) without shell quirks, working seamlessly across Windows, Mac, and Linux.
+-   **Privacy-First**: All memory and configuration files are stored locally in `brain/`. Sensitive data (`.env`, `brain/USER.md`) is strictly excluded from Git.
+-   **Secure Defaults**: Onboards new users with sanitized templates, ensuring no personal data leaks while preserving the agent's core personality.
 
 ## Quick Start
 1.  **Clone**: `git clone https://github.com/udaysagar/SpaceBlack.git`

@@ -27,6 +27,8 @@ memory/
 
 
 
-# Root USER.md
+# Root USER.md (Prevent duplicates)
 USER.md
 MEMORY.md
+/USER.md
+/MEMORY.md

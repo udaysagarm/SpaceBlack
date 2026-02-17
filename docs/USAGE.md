@@ -41,6 +41,12 @@ The agent autonomously decides when to search the web based on your prompt.
 -   **Explicit trigger**: "Search for latest React documentation."
 -   **Implicit trigger**: "What is the current stock price of Apple?"
 
+## File Operations
+The agent can read, write, and list files directly.
+-   "List files in the current directory."
+-   "Read `config.json`."
+-   "Create a file called `notes.txt` with..."
+
 ## Data management
 
 ### The "Brain"

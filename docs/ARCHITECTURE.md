@@ -25,7 +25,7 @@ Space Black uses **Markdown Files** as its database. This design choice prioriti
 
 ## Design Philosophy
 1.  **Unix Philosophy**: Operates in the shell, works with text streams, and respects standard IO.
-2.  **Cross-Platform**: Uses `platform` detection to adapt commands for Windows (PowerShell) vs. Mac/Linux (Bash).
+2.  **Cross-Platform Native I/O**: Uses Python's internal libraries (`os`, `shutil`) for file operations instead of OS-specific shell commands, ensuring stability on Windows, Mac, and Linux.
 3.  **Privacy**: No telemetry. Keys live in `.env`. Memory lives in `brain/`.
 
 ## Directory Structure
