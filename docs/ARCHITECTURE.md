@@ -1,45 +1,43 @@
-# Architecture & Technology Stack
+# Architecture Reference
 
-Space Black is designed as a **Local-First, Terminal-Native Agent**. It operates entirely on the host machine, ensuring data privacy and a responsive workflow.
+## Core Components
 
-## Technology Stack
+### 1. The Brain (`brain/`)
+The agent's state is strictly file-based.
+- **`SOUL.md`**: System Prompt (Personality).
+- **`MEMORY.md`**: Long-term semantic memory.
+- **`SCHEDULE.json`**: Pending cron jobs and reminders.
+- **`HEARTBEAT.md`**: Instructions for the background loop.
 
-### Frontend (TUI)
--   **Textual**: A Python framework for creating sophisticated TUI applications. It provides CSS-like styling, widgets, and event handling within the terminal.
--   **AsyncIO**: The UI is fully asynchronous, preventing the interface from freezing during computation.
+### 2. The Agent (`agent.py`)
+- Built with **LangGraph**.
+- Uses a **ReAct** loop (Reason → Act → Observe).
+- Supports dynamic tool loading based on `config.json`.
 
-### Backend (AI Logic)
--   **LangGraph**: Manages the agent's state machine (cyclic graph). This allows for complex workflows (e.g., "Thought -> Tool Call -> Result -> Thought").
--   **LangChain**: Provides the standardized interface for different LLM providers (Google, OpenAI, Anthropic).
--   **Tools**: Custom Python functions decorated with `@tool` that the LLM can invoke (File I/O, Web Search, System Commands).
+### 3. The Interfaces
+a. **TUI (`tui.py`)**:
+   - Built with **Textual**.
+   - Asynchronous UI loop.
+   - Direct connection to `agent.py`.
 
-### Memory System
-Space Black uses **Markdown Files** as its database. This design choice prioritizes transparency and portability.
--   **Transparency**: Users can read and edit the agent's memory with any text editor.
--   **Portability**: Easy to sync via Git or Dropbox.
+b. **Daemon (`daemon.py`)**:
+   - Headless process.
+   - Runs `run_autonomous_heartbeat()` loop.
+   - Monitors `SCHEDULE.json` for due tasks.
+   - Listens for remote events (Telegram).
 
-#### Core Files
--   `brain/memory/YYYY-MM-DD.md`: Daily logs. The agent writes thoughts and actions here.
--   `brain/SOUL.md`: The "System Prompt" that defines the persona.
--   `brain/USER.md`: Structured facts about the user.
+### 4. Tool System (`tools/`)
+- **Native Tools**: File I/O, System info (built-in).
+- **Skills**: Modular integrations (Weather, Browser, Telegram).
+- **Design**: Tools are simple Python functions decorated with `@tool`.
 
-## Design Philosophy
-1.  **Unix Philosophy**: Operates in the shell, works with text streams, and respects standard IO.
-2.  **Cross-Platform Native I/O**: Uses Python's internal libraries (`os`, `shutil`) for file operations instead of OS-specific shell commands, ensuring stability on Windows, Mac, and Linux.
-3.  **Privacy**: No telemetry. Keys live in `.env`. Memory lives in `brain/`.
+---
 
-## Directory Structure
-```
-.
-├── main.py              # Application Entry Point
-├── tui.py               # Textual UI Implementation
-├── agent.py             # LangGraph State Machine
-├── tools/               # Agent Capabilities
-│   ├── skills/          # Modular Integrations (Telegram, Weather)
-│   └── ...              # Core Tools (Search, System)
-├── brain/               # Persistent Storage
-│   ├── memory/          # Daily Logs
-│   ├── SOUL.md          # Personality Definition
-│   └── AGENTS.md        # System Directives
-└── docs/                # Documentation
-```
+## Data Flow
+
+1. **User Input** (TUI or Telegram) → **Agent Graph**
+2. **Agent** reads `brain/` files for context.
+3. **Agent** decides to call a Tool or reply.
+4. **Tool** executes (Web Search, File Write, etc.).
+5. **Agent** generates final response.
+6. **Output** sent back to User Interface.
