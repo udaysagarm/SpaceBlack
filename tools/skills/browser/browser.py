@@ -8,8 +8,11 @@ from bs4 import BeautifulSoup
 @tool
 async def visit_page(url: str):
     """
-    Visits a web page using a headless browser (Chromium) and returns its content as Markdown.
-    Useful for reading dynamic websites, documentation, or articles that require JavaScript.
+    Visits a specific URL using a headless browser (Chromium) and returns its actual page content.
+    
+    CRITICAL: Use this tool WHENEVER the user provides a specific URL (e.g. "http://...", "https://...", "example.com") 
+    or asks to "visit", "read", "check", "lookup", or "go to" a specific link.
+    Do NOT use `web_search` for direct URLs.
     """
     try:
         async with async_playwright() as p:

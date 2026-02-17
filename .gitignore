@@ -14,8 +14,7 @@ brain/USER.md
 brain/SOUL.md
 brain/memory/
 brain/soul.bak
-brain/HEARTBEAT_STATE.json
-brain/SCHEDULE.json
+brain/*.json
 brain/MEMORY.md
 brain/BOOTSTRAP.md
 brain/memory_*.md

@@ -25,8 +25,12 @@ CONFIG_FILE = os.path.join(ROOT_DIR, "config.json")
 # Logging setup
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.WARNING
 )
+
+# Suppress httpx and telegram logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
 
 def load_config():
     config = {}

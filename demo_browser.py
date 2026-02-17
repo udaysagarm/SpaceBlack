@@ -3,9 +3,9 @@ import asyncio
 from tools.skills.browser.browser import visit_page
 
 async def main():
-    print("🌍 Visiting a dynamic website (example.com)...")
+    print("🌍 Visiting a dynamic website (udaysagar.com)...")
     # This page is simple, but the tool processes it like any complex site
-    result = await visit_page.ainvoke("https://example.com")
+    result = await visit_page.ainvoke({"url": "https://udaysagar.com"})
     
     print("\n✅ Extracted Content:")
     print("-" * 40)

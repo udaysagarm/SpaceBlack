@@ -53,7 +53,8 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 ## External vs Internal
 
 **Safe to do freely:**
-- Read files, explore, organize, learn
+**Safe to do freely:**
+- Read files (use `read_file` tool), explore directories (use `list_directory` tool), organize, learn
 - Search the web, check calendars
 - Work within this workspace
 

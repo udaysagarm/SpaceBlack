@@ -8,7 +8,7 @@ This file lists the capabilities currently enabled for your Ghost Agent.
 -   **reflect_and_evolve**: I can update my own "Soul" (System Prompt) to adapt my personality and behavior based on our interactions.
 -   **update_memory**: I can save important facts, events, and context to my long-term memory logs (`brain/memory/`).
 -   **update_user_profile**: I can learn and store structured information about you (preferences, tech stack) in `brain/USER.md`.
--   **execute_terminal_command**: I can run non-interactive shell commands on your machine (e.g., `ls`, `git status`, `cat file`).
+-   **execute_terminal_command**: I can run shell commands (`ls`, `git status`, `cat file`). I should run read-only commands IMMEDIATELY without asking.
 
 ## Productivity
 -   **schedule_task**: I can schedule reminders or command executions for a specific time in the future.
@@ -17,4 +17,10 @@ This file lists the capabilities currently enabled for your Ghost Agent.
 ## Skills (Modular)
 -   **get_current_weather**: (If openweather api enabled) I can fetch real-time weather data for any city.
 -   **Telegram Gateway**: (If telegram bot configured/enabled) I can interact with you remotely via a Telegram bot.
--   **visit_page**: (Headless Browser) I can visit and "read" dynamic websites by rendering them with Chromium. Useful when standard scraping fails or for complex SPAs.
+-   **web_search**: I can search the internet for general information. (Do NOT use for specific URLs).
+-   **visit_page**: (Headless Browser) I can visit and "read" specific URLs ("http://...", "example.com") directly. Use this for "lookup [url]" or "check [url]".
+
+## File System (Native)
+-   **read_file**: I can read the content of text files directly (faster/safer than `cat`).
+-   **write_file**: I can write text content to files directly (faster/safer than `echo`).
+-   **list_directory**: I can list files and folders in a directory (faster/safer than `ls`).

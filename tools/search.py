@@ -7,9 +7,11 @@ from langchain_core.tools import tool
 @tool
 def web_search(query: str):
     """
-    Performs a web search using the configured provider (Brave or DuckDuckGo).
-    Use this to find information about current events, technical documentation, 
-    or any topic where your internal knowledge might be outdated or incomplete.
+    Performs a web search using Brave Search or DuckDuckGo.
+    Useful for finding general information, news, or documentation.
+    
+    IMPORTANT: Do NOT use this tool if the user provides a specific URL (e.g., "http://..." or "example.com"). 
+    For specific URLs, use the `visit_page` tool instead.
     """
     try:
         # Determine provider from config

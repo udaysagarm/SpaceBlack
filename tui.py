@@ -382,6 +382,10 @@ class SkillsScreen(ModalScreen):
         ow_enabled = openweather_cfg.get("enabled", False)
         ow_api_key = openweather_cfg.get("api_key", "")
 
+        # Browser Config
+        browser_cfg = skills_config.get("browser", {})
+        browser_enabled = browser_cfg.get("enabled", False)
+
         # Telegram Config
         telegram_cfg = skills_config.get("telegram", {})
         tg_enabled = telegram_cfg.get("enabled", False)
@@ -391,6 +395,15 @@ class SkillsScreen(ModalScreen):
         with Container(id="skills-dialog"):
             yield Label("⚡ Agent Skills Manager", classes="config-title")
             
+            # Browser Skill
+            with Vertical(classes="skill-row"):
+                with Horizontal(classes="skill-header"):
+                    yield Label("🌍 Headless Browser (Readable Browsing)", classes="skill-name")
+                    yield Switch(value=browser_enabled, id="browser_switch")
+                
+                yield Label("Allows the agent to read dynamic websites using Chromium.", classes="description")
+                yield Label("Requires 'playwright install chromium' to be run once.", classes="help-text")
+
             # OpenWeather Skill
             with Vertical(classes="skill-row"):
                 with Horizontal(classes="skill-header"):
@@ -432,6 +445,9 @@ class SkillsScreen(ModalScreen):
         ow_enabled = self.query_one("#openweather_switch").value
         ow_key = self.query_one("#openweather_key").value
         
+        # Browser Values
+        browser_enabled = self.query_one("#browser_switch").value
+
         # Telegram Values
         tg_enabled = self.query_one("#telegram_switch").value
         tg_token = self.query_one("#telegram_token").value
@@ -454,6 +470,11 @@ class SkillsScreen(ModalScreen):
             "api_key": ow_key
         }
 
+        # Update Browser
+        config_data["skills"]["browser"] = {
+            "enabled": browser_enabled
+        }
+
         # Update Telegram
         config_data["skills"]["telegram"] = {
             "enabled": tg_enabled,
@@ -468,7 +489,11 @@ class SkillsScreen(ModalScreen):
              self.notify(f"Error saving skills: {e}", severity="error")
              return
 
+             self.notify(f"Error saving skills: {e}", severity="error")
+             return
+
         self.dismiss(result=True)
+        self.notify("Skills saved. Please restart the agent for changes to take effect.", severity="warning", timeout=5)
 
 
 class AgentInterface(App):

@@ -10,14 +10,15 @@
 -   **Personality Engine**: Developing a unique persona stored in `brain/SOUL.md` that evolves over time based on interactions.
 -   **Task Scheduler**: Schedule commands and reminders. The agent executes them automatically in the background.
 -   **Web Access**: Real-time internet search using Brave Search or DuckDuckGo to fetch current events.
+-   **Headless Browser**: Can read dynamic websites (React/Vue/Angular) using a built-in Chromium engine.
 -   **Terminal UI (TUI)**: Built with Textual for a responsive CLI experience.
--   **Modular Skills**: Extensible system for integrations like OpenWeather and Telegram.
+-   **Modular Skills**: Extensible system for integrations like OpenWeather and Telegram. (Requires restart to enable/disable)
 -   **Multi-Provider**: Switch between Google Gemini, OpenAI, and Anthropic models dynamically.
 -   **Privacy-First**: All memory and configuration files are stored locally. Sensitive data is excluded from Git.
 
 ## Quick Start
 1.  **Clone**: `git clone https://github.com/udaysagar/SpaceBlack.git`
-2.  **Setup**: `./spaceblack onboard` (or `spaceblack onboard` on Windows)
+2.  **Setup**: `./spaceblack onboard` (Installs Python dependencies + Browser binaries automatically)
 3.  **Run**: `./spaceblack start`
 
 The application will automatically detect missing configurations and launch a setup wizard to guide you through the process.

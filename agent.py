@@ -145,12 +145,17 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
 # --- Tools ---
 # Tools are imported from tools/ module
 from langgraph.graph.message import add_messages
-from tools.system import reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command
+from tools.system import (
+    reflect_and_evolve, 
+    update_user_profile, 
+    update_memory,
+    execute_terminal_command
+)
 from tools.scheduler import schedule_task
-from tools.search import web_search
 from tools.search import web_search
 from tools.skills.openweather import get_current_weather
 from tools.skills.browser.browser import visit_page
+from tools.files import read_file, write_file, list_directory
 
 
 
@@ -182,26 +187,47 @@ def run_agent(state: AgentState):
     config = load_config()
     llm = get_llm(config["provider"], config["model"], temperature=0)
 
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search, visit_page]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search]
     
     # Dynamic Skills
-    if config.get("skills", {}).get("openweather", {}).get("enabled", False):
+    skills_config = config.get("skills", {})
+
+    if skills_config.get("openweather", {}).get("enabled", False):
         tools.append(get_current_weather)
 
+    if skills_config.get("browser", {}).get("enabled", False):
+        tools.append(visit_page)
+
+    # File tools are always available
+    tools.extend([read_file, write_file, list_directory])
+
     llm_with_tools = llm.bind_tools(tools)
-    
+
     response = llm_with_tools.invoke(messages)
     return {"messages": [response]}
+
+# Define the tools the agent can use
+# We catch the SystemExit to prevent the agent from killing the whole process
+@tool 
+def exit_conversation():
+    """
+    Ends the current conversation.
+    """
+    return "Goodbye!"
 
 def build_graph():
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", run_agent)
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search, get_current_weather, visit_page]
+    # Note: ToolNode must have *all* potential tools registered, OR we need to dynamically build it?
+    # ToolNode documentation says it executes tools called by the LLM.
+    # Providing all tools safely is fine, as the LLM won't call them if not bound.
+    # However, to be strict, we can just expose all.
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search, get_current_weather, visit_page, read_file, write_file, list_directory, exit_conversation]
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
-    
+
     workflow.set_entry_point("agent")
-    
+
     def should_continue(state: AgentState):
         if state["messages"][-1].tool_calls: return "tools"
         return END

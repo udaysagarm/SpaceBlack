@@ -129,7 +129,13 @@ def update_memory(content: str):
 def execute_terminal_command(command: str):
     """
     Executes a terminal command.
-    SAFETY: Blocks 'rm', 'mv', 'dd' without confirmation.
+    
+    usage:
+    - Use this for system exploration (`find`, `grep`, `ps`, `top`).
+    - Use this for git operations.
+    - DO NOT use this for reading/writing text files or listing simple directories. Use the dedicated `read_file`, `write_file`, and `list_directory` tools instead (they are safer and cross-platform).
+    - You should execute read-only commands (`grep`, `git status`) IMMEDIATELY without asking for permission.
+    - Only ask for confirmation for destructive commands (`rm`, `mv`, `dd`).
     """
     forbidden = ["rm ", "mv ", "dd ", "at ", "crontab", "> /dev/null", ":(){:|:&};:"]
     for taboo in forbidden:

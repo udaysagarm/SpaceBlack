@@ -55,10 +55,46 @@ def main():
     print(banner)
     print("System: Ghost initialised.")
 
+    # Process Management
+    processes = []
+
+    # 1. Start Telegram Bot if enabled
+    try:
+        import json
+        with open(CONFIG_FILE, "r") as f:
+            config = json.load(f)
+            
+        tg_config = config.get("skills", {}).get("telegram", {})
+        if tg_config.get("enabled"):
+            print("🚀 Launching Telegram Bot...")
+            # Use sys.executable to ensure same venv
+            # bot.py is in tools/skills/telegram/bot.py
+            bot_path = os.path.join("tools", "skills", "telegram", "bot.py")
+            if os.path.exists(bot_path):
+                 # Run in background
+                 p = subprocess.Popen([sys.executable, bot_path])
+                 processes.append(p)
+                 print(f"   Telegram Bot PID: {p.pid}")
+            else:
+                 print(f"⚠️  Telegram Bot script not found at {bot_path}")
+    except Exception as e:
+        print(f"⚠️  Failed to launch background skills: {e}")
+
+    # 2. Start TUI (Blocking)
     try:
         subprocess.run([sys.executable, "tui.py"])
     except KeyboardInterrupt:
         print("\nAgent stopped.")
+    finally:
+        # Cleanup background processes
+        print("\nStopping background services...")
+        for p in processes:
+            try:
+                p.terminate()
+                p.wait(timeout=2)
+            except:
+                p.kill()
+        print("Goodbye.")
 
 if __name__ == "__main__":
     main()
