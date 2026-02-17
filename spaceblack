@@ -10,11 +10,16 @@ if [ "$COMMAND" == "onboard" ]; then
 elif [ "$COMMAND" == "start" ]; then
     echo "Launching Space Black..."
     ./scripts/run.sh
+elif [ "$COMMAND" == "daemon" ]; then
+    echo "Starting Background Daemon..."
+    # Run using the python executable directly
+    .venv/bin/python main.py daemon
 else
     echo "Usage: ./spaceblack [command]"
     echo ""
     echo "Commands:"
     echo "  onboard  -> Run this ONCE when you first install the app."
     echo "  start    -> Run this EVERY TIME you want to use the app."
+    echo "  daemon   -> Run the background service (headless)."
     echo ""
 fi

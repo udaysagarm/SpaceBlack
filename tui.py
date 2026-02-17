@@ -496,6 +496,199 @@ class SkillsScreen(ModalScreen):
         self.notify("Skills saved. Please restart the agent for changes to take effect.", severity="warning", timeout=5)
 
 
+class TasksScreen(ModalScreen):
+    """Modal screen for managing automated tasks."""
+    CSS = """
+    TasksScreen {
+        align: center middle;
+        background: $surface 50%;
+    }
+    
+    #tasks-dialog {
+        width: 90%;
+        max-width: 90;
+        height: 90%;
+        max-height: 50;
+        border: solid $accent;
+        padding: 1 2;
+        background: $surface;
+        layout: vertical;
+    }
+    
+    #tasks-list {
+        height: 1fr;
+        width: 100%;
+        overflow-y: auto;
+        border: solid $secondary;
+        padding: 1;
+        background: $panel;
+        margin-bottom: 1;
+    }
+    
+    .config-title {
+        text-align: center;
+        margin-bottom: 2;
+        color: $text;
+        text-style: bold;
+        background: $primary;
+        color: white;
+        padding: 1;
+        width: 100%;
+        border-bottom: solid $accent;
+        dock: top;
+    }
+    
+    .task-row {
+        height: auto;
+        margin-bottom: 1;
+        border: solid $secondary;
+        padding: 1;
+        background: $panel;
+        layout: horizontal;
+    }
+    
+    .task-info {
+        width: 1fr;
+        height: auto;
+        layout: vertical;
+    }
+    
+    .task-time {
+        color: yellow;
+        text-style: bold;
+    }
+    
+    .task-desc {
+        color: white;
+    }
+    
+    .task-recur {
+        color: cyan;
+        text-style: italic;
+    }
+    
+    .delete-btn {
+        dock: right;
+        min-width: 10;
+        height: 3;
+        margin-left: 1;
+    }
+    
+    .empty-msg {
+        text-align: center;
+        margin-top: 4;
+        color: $text-muted;
+    }
+
+    .btn-group {
+        margin-top: 1;
+        height: 3;
+        dock: bottom;
+    }
+    """
+
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="tasks-dialog"):
+            yield Label("📅 Automated Tasks Manager", classes="config-title")
+            
+            # The scrollable list
+            with Vertical(id="tasks-list"):
+                pass # Will be populated by refresh_tasks
+            
+            # Footer buttons
+            with Horizontal(classes="field-group btn-group"):
+                yield Button("Close", variant="primary", id="close_tasks_btn")
+
+    def on_mount(self):
+        self.refresh_count = 0
+        self.refresh_tasks()
+
+    def refresh_tasks(self):
+        self.refresh_count += 1
+        tasks_list = self.query_one("#tasks-list")
+        tasks_list.remove_children()
+        
+        # Load tasks safely
+        tasks = []
+        try:
+            from brain.memory_manager import SCHEDULE_FILE, read_file_safe
+            content = read_file_safe(SCHEDULE_FILE, "[]")
+            tasks = json.loads(content)
+        except Exception as e:
+            tasks_list.mount(Label(f"Error loading tasks: {e}", classes="empty-msg"))
+            return
+        
+        if not tasks:
+            tasks_list.mount(Label("No scheduled tasks found.", classes="empty-msg"))
+        else:
+            for idx, task in enumerate(tasks):
+                # Use refresh_count to ensure unique IDs across refreshes
+                unique_sid = f"{idx}_{self.refresh_count}"
+                
+                # Prepare children for Info Container
+                info_children = [
+                    Label(f"⏰ {task.get('time', 'Unknown')}", classes="task-time"),
+                    Label(f"📝 {task.get('task', '')}", classes="task-desc")
+                ]
+                if "recurrence" in task:
+                    info_children.append(Label(f"🔄 Repeats: {task['recurrence']}", classes="task-recur"))
+                
+                # Create Info Container with children
+                info = Container(*info_children, classes="task-info")
+                
+                # Delete button
+                delete_btn = Button("Delete", variant="error", id=f"delete-{unique_sid}", classes="delete-btn")
+                
+                # Create Row Container with children
+                row = Container(info, delete_btn, classes="task-row", id=f"row-{unique_sid}")
+                
+                # Mount the fully constructed row to the list (which is already mounted)
+                tasks_list.mount(row)
+
+    @on(Button.Pressed)
+    def handle_buttons(self, event: Button.Pressed):
+        btn_id = event.button.id
+        
+        if btn_id == "close_tasks_btn":
+            self.dismiss()
+            return
+            
+        if btn_id and btn_id.startswith("delete-"):
+            try:
+                # Format: delete-IDX_REFRESHCOUNT
+                parts = btn_id.split("-")
+                unique_id = parts[1] # "IDX_REFRESHCOUNT"
+                idx = int(unique_id.split("_")[0])
+                
+                self.delete_task(idx)
+            except Exception as e:
+                self.notify(f"Error deleting task: {e}", severity="error")
+
+    def delete_task(self, idx: int):
+        from brain.memory_manager import SCHEDULE_FILE, read_file_safe
+        try:
+            content = read_file_safe(SCHEDULE_FILE, "[]")
+            tasks = json.loads(content)
+            
+            if 0 <= idx < len(tasks):
+                removed = tasks.pop(idx)
+                
+                with open(SCHEDULE_FILE, "w") as f:
+                    json.dump(tasks, f, indent=4)
+                
+                self.notify(f"Deleted task.")
+                # Refresh UI fully to reset indices and IDs
+                # This ensures we don't have ID collisions or stale indices
+                self.refresh_tasks()
+            else:
+                self.notify("Task index out of range. Refreshing...", severity="error")
+                self.refresh_tasks()
+                
+        except Exception as e:
+             self.notify(f"Delete failed: {e}", severity="error")
+
+
 class AgentInterface(App):
     """The main TUI App."""
     CSS = """
@@ -560,15 +753,15 @@ class AgentInterface(App):
             with Container(id="chat-container"):
                 with Vertical(id="chat-history"):
                     banner = """
-  ____                         ____  _            _      
- / ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __ 
- \___ \| '_ \ / _` |/ __/ _ \ |  _ \| |/ _` |/ __| |/ / 
-  ___) | |_) | (_| | (_|  __/ | |_) | | (_| | (__|   <  
- |____/| .__/ \__,_|\___\___| |____/|_|\__,_|\___|_|\_\\
-       |_|                                              
+   ____                         ____  _            _      
+  / ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __ 
+  \___ \| '_ \ / _` |/ __/ _ \ |  _ \| |/ _` |/ __| |/ / 
+   ___) | |_) | (_| | (_|  __/ | |_) | | (_| | (__|   <  
+  |____/| .__/ \__,_|\___\___| |____/|_|\__,_|\___|_|\_\\
+        |_|                                              
 """
                     yield Static(f"[bold green]{banner}[/]", classes="message")
-                    yield Static("System: Ghost initialised. Type /config to change settings, Type /skills to enable/disable skills. 'exit' to quit.", classes="agent")
+                    yield Static("System: Ghost initialised. Type /config, /skills, or /tasks. 'exit' to quit.", classes="agent")
                 yield Input(placeholder="Type your command or message here...", id="chat_input")
         
         yield Footer()
@@ -643,6 +836,10 @@ class AgentInterface(App):
 
         if user_input.lower() == "/skills":
             self.push_screen(SkillsScreen(), self.on_config_closed)
+            return
+
+        if user_input.lower() == "/tasks":
+            self.push_screen(TasksScreen(), self.on_config_closed)
             return
 
         chat_history = self.query_one("#chat-history")

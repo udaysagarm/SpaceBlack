@@ -31,8 +31,9 @@ Adds a task to the execution queue for a future time.
 -   **Input**: 
     -   `task`: Description of the task.
     -   `time`: Target time (HH:MM format).
+    -   `recurrence`: (Optional) Interval for repeating tasks. Examples: "1m", "1h", "daily".
 -   **Storage**: Updates `brain/SCHEDULE.json`.
--   **Mechanism**: The `tui.py` event loop checks this file every minute.
+-   **Mechanism**: The `tui.py` event loop checks this file every minute. Recurring tasks are automatically rescheduled.
 
 ## Search Tools
 

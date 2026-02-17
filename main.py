@@ -15,6 +15,13 @@ def main():
     If not, runs setup_wizard.
     If yes, runs tui.py.
     """
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        if command == "daemon" or command == "background":
+            from daemon import run_daemon
+            run_daemon()
+            return
+
     print("Checking configuration...")
     ensure_brain_initialized()
     
@@ -37,13 +44,10 @@ def main():
             
         print("Setup complete. Starting Agent...")
     
-    # Now run the main TUI
-    # We can use subprocess to run "python tui.py" to ensure a fresh process 
-    # and to properly load the new .env file we just wrote (if we rely on dotenv loading at startup)
     
     # Print "Space Black" banner (Simulating figlet)
     # Color: \033[38;2;27;242;34m (Green)
-    banner = """
+    banner = r"""
 \033[38;2;27;242;34m
   ____                         ____  _            _      
  / ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __ 

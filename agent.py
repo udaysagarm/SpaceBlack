@@ -46,6 +46,36 @@ HEARTBEAT_STATE_FILE = os.path.join(BRAIN_DIR, "memory", "heartbeat-state.json")
 
 # ... (existing functions: load_config, read_file_safe, build_system_prompt)
 
+def parse_recurrence(recurrence: str) -> datetime.timedelta:
+    """
+    Parses a recurrence string into a timedelta.
+    Supports: "30s", "10m", "2h", "5d", "1w".
+    Aliases: "daily" (1d), "weekly" (1w), "hourly" (1h).
+    """
+    recurrence = recurrence.lower().strip()
+    
+    # Aliases
+    if recurrence == "daily": return datetime.timedelta(days=1)
+    if recurrence == "weekly": return datetime.timedelta(weeks=1)
+    if recurrence == "hourly": return datetime.timedelta(hours=1)
+    
+    # Unit parsing
+    try:
+        if recurrence.endswith("s"):
+            return datetime.timedelta(seconds=int(recurrence[:-1]))
+        if recurrence.endswith("m"):
+            return datetime.timedelta(minutes=int(recurrence[:-1]))
+        if recurrence.endswith("h"):
+            return datetime.timedelta(hours=int(recurrence[:-1]))
+        if recurrence.endswith("d"):
+            return datetime.timedelta(days=int(recurrence[:-1]))
+        if recurrence.endswith("w"):
+            return datetime.timedelta(weeks=int(recurrence[:-1]))
+    except ValueError:
+        pass
+        
+    return None
+
 def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
     """
     Checks if a heartbeat is needed. If so, runs background tasks.
@@ -70,12 +100,37 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
         if matches:
             # We have due tasks!
             # Propagate specific notifications
-            for task in matches:
-                schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Time: {task['time']})")
+            # Save updated schedule (removing executed tasks, rescheduling recurring ones)
+            new_schedule = list(remaining)
             
-            # Save updated schedule (removing executed tasks)
+            for task in matches:
+                # notification
+                recurrence = task.get("recurrence")
+                if recurrence:
+                    # Calculate next time
+                    try:
+                        fmt = "%Y-%m-%d %H:%M"
+                        dt = datetime.datetime.strptime(task["time"], fmt)
+                        
+                        delta = parse_recurrence(recurrence)
+                        if delta:
+                            dt += delta
+                            # Update task time
+                            task["time"] = dt.strftime(fmt)
+                            new_schedule.append(task)
+                            schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Rescheduled for {task['time']})")
+                        else:
+                            schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Error: Invalid recurrence '{recurrence}')")
+                    except Exception as e:
+                        schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Error rescheduling: {e})")
+                else:
+                    schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Time: {task['time']})")
+
+            # Sort and save
+            new_schedule.sort(key=lambda x: x["time"])
+            
             with open(SCHEDULE_FILE, "w") as f:
-                json.dump(remaining, f, indent=4)
+                json.dump(new_schedule, f, indent=4)
     except Exception as e:
         schedule_notifications.append(f"Scheduler Error: {e}")
 
@@ -109,7 +164,9 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
             [TASK]
             Perform the check. 
             - If everything is normal and no action is needed, reply with 'Status: OK'.
-            - If there is something the user needs to know (e.g. system alert, suggestion), write a short message.
+            - If there is something the user needs to know or an action the agent must perform, write a short, clear instruction in PLAIN TEXT.
+            - DO NOT WRITE CODE. DO NOT USE MARKDOWN CODE BLOCKS.
+            - Example: "Create a file named 'test.txt' with content 'hello'."
             """
             
             config = load_config()
@@ -123,10 +180,12 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
             if isinstance(content, list): content = " ".join([str(p) for p in content])
             response = content.strip()
             
-            with open(HEARTBEAT_STATE_FILE, "w") as f:
-                json.dump({"last_run": now, "status": "ok"}, f)
-                
-            if "Status: OK" not in response:
+            if "Status: OK" in response:
+                # Remove "Status: OK" to see if there are other instructions
+                cleaned_response = response.replace("Status: OK", "").strip()
+                if cleaned_response:
+                    heartbeat_msg = cleaned_response
+            else:
                 heartbeat_msg = response
         except Exception as e:
             heartbeat_msg = f"Heartbeat Error: {str(e)}"
@@ -151,11 +210,12 @@ from tools.system import (
     update_memory,
     execute_terminal_command
 )
-from tools.scheduler import schedule_task
+from tools.scheduler import schedule_task, cancel_task
 from tools.search import web_search
 from tools.skills.openweather import get_current_weather
 from tools.skills.browser.browser import visit_page
 from tools.files import read_file, write_file, list_directory
+from tools.skills.telegram.send_message import send_telegram_message
 
 
 
@@ -176,18 +236,24 @@ def run_agent(state: AgentState):
             
     # Robust Fix: Merge system prompt into the first HumanMessage
     # This avoids "contents required" errors and order issues with Gemini 2.0
+    content = str(chat_history[0].content)
+    
+    # FORCE EXECUTION for Scheduled Tasks
+    if "⏰ **Scheduled Task Due**" in content:
+        content = f"⚠️ SYSTEM OVERRIDE: IMMEDIATELY EXECUTE THE FOLLOWING SCHEDULED TASKS. DO NOT CHAT. USE TOOLS.\n\n{content}"
+
     if chat_history and isinstance(chat_history[0], HumanMessage):
-        chat_history[0] = HumanMessage(content=system_prompt + "\n\n" + str(chat_history[0].content))
+        chat_history[0] = HumanMessage(content=system_prompt + "\n\n" + content)
     else:
         # Fallback if first message isn't Human
-        chat_history = [HumanMessage(content=system_prompt)] + chat_history
+        chat_history = [HumanMessage(content=system_prompt + "\n\n" + content)] + chat_history
     
     messages = chat_history
     
     config = load_config()
     llm = get_llm(config["provider"], config["model"], temperature=0)
 
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, cancel_task, web_search]
     
     # Dynamic Skills
     skills_config = config.get("skills", {})
@@ -200,10 +266,27 @@ def run_agent(state: AgentState):
 
     # File tools are always available
     tools.extend([read_file, write_file, list_directory])
+    
+    # Telegram tool
+    tools.append(send_telegram_message)
 
     llm_with_tools = llm.bind_tools(tools)
 
     response = llm_with_tools.invoke(messages)
+    
+    # GUARD: If response is effectively empty (no content, no tool calls)
+    # This happens sometimes with Gemini or if the model "chokes"
+    if not response.content and not response.tool_calls:
+        response.content = "..."
+        
+    # GUARD: If response has tool calls but no content, ensure content is partially filled
+    # to prevent TUI from showing blank (though TUI usually waits for final result)
+    # But if this is the FINAL result (e.g. tool execution failed?), we need text.
+    if not response.content and response.tool_calls:
+        # We can leave it empty if we are fairly sure it proceeds to tool execution.
+        # But for safety:
+        response.content = " " # Space is enough to be not None
+        
     return {"messages": [response]}
 
 # Define the tools the agent can use
@@ -222,7 +305,7 @@ def build_graph():
     # ToolNode documentation says it executes tools called by the LLM.
     # Providing all tools safely is fine, as the LLM won't call them if not bound.
     # However, to be strict, we can just expose all.
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, web_search, get_current_weather, visit_page, read_file, write_file, list_directory, exit_conversation]
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, cancel_task, web_search, get_current_weather, visit_page, read_file, write_file, list_directory, exit_conversation, send_telegram_message]
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
 
