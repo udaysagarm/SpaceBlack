@@ -20,6 +20,9 @@ def save_config(provider, model_name, api_key, brave_key):
         "provider": provider,
         "model": model_name,
         "skills": {
+            "browser": {
+                "enabled": True
+            },
             "openweather": {
                 "enabled": False,
                 "api_key": ""
