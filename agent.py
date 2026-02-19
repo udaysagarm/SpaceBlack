@@ -242,6 +242,35 @@ from tools.skills.telegram.send_message import send_telegram_message
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
 
+def _trim_messages(messages: list, max_messages: int = 24, max_tool_chars: int = 1500) -> list:
+    """
+    Prevent token overflow during multi-step tool sessions (esp. browser).
+    - Truncates old ToolMessage content to max_tool_chars
+    - If history exceeds max_messages, keeps the first 4 + last (max_messages - 4)
+    """
+    from langchain_core.messages import ToolMessage
+    
+    # Truncate old tool messages (keep the last 2 tool messages at full size)
+    tool_msg_indices = [i for i, m in enumerate(messages) if isinstance(m, ToolMessage)]
+    for idx in tool_msg_indices[:-2]:  # All except the last 2
+        msg = messages[idx]
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        if len(content) > max_tool_chars:
+            messages[idx] = ToolMessage(
+                content=content[:max_tool_chars] + "\n... (truncated)",
+                name=msg.name,
+                tool_call_id=msg.tool_call_id,
+            )
+    
+    # Limit total message count
+    if len(messages) > max_messages:
+        # Keep first 4 (system context) + last N
+        keep_end = max_messages - 4
+        messages = messages[:4] + messages[-keep_end:]
+    
+    return messages
+
+
 def run_agent(state: AgentState):
     system_prompt = build_system_prompt()
     chat_history = list(state["messages"])
@@ -264,6 +293,9 @@ def run_agent(state: AgentState):
     else:
         # Fallback if first message isn't Human
         chat_history = [HumanMessage(content=system_prompt + "\n\n" + content)] + chat_history
+    
+    # Trim history to prevent token overflow during long browser sessions
+    chat_history = _trim_messages(chat_history)
     
     messages = chat_history
     

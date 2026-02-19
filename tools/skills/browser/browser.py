@@ -1,26 +1,36 @@
 """
-browser.py — Space Black browser tool (OpenClaw/browser-use CDP architecture, v7)
+browser.py — Space Black autonomous browser (OpenClaw architecture, v8)
 
-Discovery : CDP Accessibility.getFullAXTree  → real AX tree, dialog-aware, no JS hacks
-Interaction: CDP Input.dispatchMouseEvent + Input.insertText → real hardware events
-             (Gmail, Workday, React, Angular all respond correctly)
-Reference  : backendNodeId  — the browser's own stable node pointer, not data-sbref
+Architecture (mirrors OpenClaw):
+  1. Semantic Snapshots  — CDP Accessibility.getFullAXTree → structured text with
+     both readable content AND numbered interactive refs.  The agent sees the page
+     like a screen-reader: headings, paragraphs, labels, plus [ref=N] on every
+     clickable/typeable element.
+  2. Intelligent Waits   — networkidle / URL-change / selector-based waits replace
+     dumb sleep() calls.  Every mutating action auto-waits before re-snapshotting.
+  3. CDP Interaction      — Real hardware-level mouse+keyboard via Input domain.
+     Click, type, key combos, drag, file upload — all via CDP, not JS hacks.
+  4. Self-Healing Refs    — If a ref goes stale after navigation, the tool auto
+     re-snapshots and reports the new state instead of crashing.
+  5. Persistent Profiles  — user_data_dir keeps logins alive across restarts.
 
-All actions return a fresh snapshot string so the agent always knows the new page state.
+Single tool entry-point: browser_act(action, ...)
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
-import random
-import string
+import re
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from langchain_core.tools import tool
 from playwright.async_api import (
     Browser,
     BrowserContext,
@@ -28,123 +38,839 @@ from playwright.async_api import (
     Page,
     Playwright,
     async_playwright,
+    TimeoutError as PlaywrightTimeout,
 )
-from langchain_core.tools import tool
 
+log = logging.getLogger("spaceblack.browser")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-_ROOT   = Path(__file__).parent.parent.parent.parent  # project root
-_STATE  = _ROOT / "brain" / "vault" / "browser_state.json"
-_SHOTS  = _ROOT / "brain" / "screenshots"
-_SHOTS.mkdir(parents=True, exist_ok=True)
+_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_PROFILE_DIR = _ROOT / "brain" / "vault" / "browser_profile"
+_SHOTS_DIR = _ROOT / "brain" / "screenshots"
+_SHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── Constants ──────────────────────────────────────────────────────────────────
+_MAX_SNAPSHOT_CHARS = 4000
+_MAX_ELEMENTS = 80
+_SMART_WAIT_TIMEOUT = 4000          # ms — networkidle fallback
+_NAV_TIMEOUT = 30_000               # ms
+_DEFAULT_VIEWPORT = {"width": 1366, "height": 768}
 
-# ── Element registry ───────────────────────────────────────────────────────────
-@dataclass
-class _Elem:
-    backend_node_id: int    # CDP's own stable DOM reference
-    role:            str    # "textbox", "button", "combobox", "link", …
-    name:            str    # Accessible name shown to agent
-    frame_url:       str = ""
-
-
-# page_id → {ref_number: _Elem}
-_REGISTRY: Dict[int, Dict[int, _Elem]] = {}
-
-
-# Roles that are genuinely user-interactive — strictly whitelisted
-# Everything structural/decorative (dialog, navigation, statictext, tooltip,
-# layouttable, banner, etc.) is excluded so they don't crowd out input fields.
-_INTERACTIVE_ROLES = {
+# Roles that the agent can interact with
+_INTERACTIVE_ROLES = frozenset({
     "button", "link",
     "textbox", "searchbox", "combobox", "spinbutton",
     "checkbox", "radio",
     "menuitem", "menuitemcheckbox", "menuitemradio",
     "option", "tab", "switch", "treeitem",
-    "slider", "columnheader", "rowheader", "row", "gridcell",
-    "listbox",
-    # Include heading as read-only context nodes (agent needs them to understand page)
-    "heading",
-}
+    "slider", "listbox",
+    "columnheader", "rowheader", "gridcell",
+})
 
-_MAX_ELEMENTS = 150   # generous cap — only interactive roles now, so fewer total
+# Roles that provide readable context (shown as inline text in snapshot)
+_CONTENT_ROLES = frozenset({
+    "heading", "paragraph", "text", "statictext",
+    "blockquote", "caption", "code",
+    "listitem", "cell", "definition",
+    "status", "alert", "log", "marquee", "timer",
+    "contentinfo", "complementary", "main", "article",
+    "navigation", "banner", "region", "form",
+    "dialog", "alertdialog",
+})
 
-
-# ── AX tree DOM roles we care about ───────────────────────────────────────────
-
-
-
-# ── Stealth JS injected at page creation ──────────────────────────────────────
-_JS_STEALTH = """
+_STEALTH_JS = """\
 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
 Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
 Object.defineProperty(navigator, 'languages', {get: () => ['en-US','en']});
 window.chrome = {runtime: {}};
 """
 
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
 
-# ── Page content extractor (unchanged from v6) ────────────────────────────────
-_JS_CONTENT = """() => {
-    const MAX = 7000;
-    const lines = [];
-    const seen = new Set();
 
-    const add = (text, prefix) => {
-        const t = (text || '').trim().replace(/\\s+/g, ' ');
-        if (t.length > 3 && !seen.has(t)) { seen.add(t); lines.push((prefix||'') + t); }
-    };
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Element Registry
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    // Priority: email/grid rows
-    const rows = [...document.querySelectorAll(
-        '[role="row"], tr[tabindex], [role="listitem"][tabindex], [data-convid], [data-messageid]'
-    )].filter(el => {
-        const s = window.getComputedStyle(el);
-        if (s.display === 'none' || s.visibility === 'hidden') return false;
-        const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0;
-    });
+@dataclass
+class _Elem:
+    """An interactive element discovered in the AX tree."""
+    backend_node_id: int
+    role: str
+    name: str
+    value: str = ""
+    description: str = ""
 
-    if (rows.length > 0) {
-        let n = 0;
-        for (const row of rows) {
-            if (n++ >= 40) { lines.push('...(more rows — scroll)'); break; }
-            const t = (row.innerText || '').trim().replace(/\\s+/g, ' ');
-            if (t.length > 3 && !seen.has(t)) {
-                seen.add(t);
-                lines.push('• ' + t.slice(0, 130));
-            }
-        }
-        if (lines.join('\\n').length < MAX) {
-            const headings = document.querySelectorAll('h1, h2, h3');
-            headings.forEach(h => add(h.innerText, '# '));
-        }
-        return lines.join('\\n').slice(0, MAX);
+
+# page_id → {ref: _Elem}
+_REGISTRY: Dict[int, Dict[int, _Elem]] = {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  AX Tree Helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _ax_prop(node: dict, prop_name: str) -> str:
+    """Extract a named property value from an AX node."""
+    for p in node.get("properties", []):
+        if p.get("name") == prop_name:
+            v = p.get("value", {})
+            if isinstance(v, dict):
+                return str(v.get("value", "")).strip()
+            return str(v).strip()
+    return ""
+
+
+def _ax_role(node: dict) -> str:
+    rv = node.get("role", {})
+    if isinstance(rv, dict):
+        return (rv.get("value") or "").lower().strip()
+    return (rv or "").lower().strip()
+
+
+def _ax_name(node: dict) -> str:
+    nv = node.get("name", {})
+    if isinstance(nv, dict):
+        return (nv.get("value") or "").strip()
+    return (nv or "").strip()
+
+
+def _ax_value(node: dict) -> str:
+    vv = node.get("value", {})
+    if isinstance(vv, dict):
+        return (vv.get("value") or "").strip()
+    return (vv or "").strip()
+
+
+def _ax_backend_id(node: dict) -> Optional[int]:
+    bid = node.get("backendDOMNodeId")
+    return int(bid) if bid else None
+
+
+def _ax_ignored(node: dict) -> bool:
+    return bool(node.get("ignored", False))
+
+
+def _ax_children_ids(node: dict) -> List[str]:
+    return [c.get("nodeId", "") for c in node.get("childIds", [])] if "childIds" in node else node.get("childIds", [])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Snapshot Builder — The Core
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _get_ax_tree(cdp: CDPSession) -> List[dict]:
+    """Fetch the full accessibility tree via CDP."""
+    try:
+        result = await asyncio.wait_for(
+            cdp.send("Accessibility.getFullAXTree", {}),
+            timeout=10.0,
+        )
+        return result.get("nodes", [])
+    except Exception as e:
+        log.warning("AX tree fetch failed: %s", e)
+        return []
+
+
+def _build_snapshot(nodes: List[dict]) -> Tuple[Dict[int, _Elem], str]:
+    """
+    Walk the AX tree and produce:
+      1. A registry of interactive elements (ref → _Elem)
+      2. A human-readable snapshot string showing page structure
+
+    The snapshot includes BOTH content (headings, text, labels) and
+    interactive elements with [ref=N] markers — mirroring OpenClaw's
+    approach of giving the agent full page comprehension.
+    """
+    registry: Dict[int, _Elem] = {}
+    lines: List[str] = []
+    ref_counter = 0
+    total_chars = 0
+
+    # Build node-id lookup for parent-child relationships
+    id_to_node: Dict[str, dict] = {}
+    for n in nodes:
+        nid = n.get("nodeId", "")
+        if nid:
+            id_to_node[nid] = n
+
+    # Track the depth of each node for indentation
+    depth_map: Dict[str, int] = {}
+    root_ids = []
+    child_set = set()
+    for n in nodes:
+        for cid in n.get("childIds", []):
+            child_set.add(cid)
+    for n in nodes:
+        nid = n.get("nodeId", "")
+        if nid and nid not in child_set:
+            root_ids.append(nid)
+
+    def walk(node_id: str, depth: int):
+        nonlocal ref_counter, total_chars
+
+        if total_chars >= _MAX_SNAPSHOT_CHARS:
+            return
+        if ref_counter >= _MAX_ELEMENTS:
+            return
+
+        node = id_to_node.get(node_id)
+        if not node:
+            return
+        if _ax_ignored(node):
+            # Still walk children — some ignored containers have visible children
+            for cid in node.get("childIds", []):
+                walk(cid, depth)
+            return
+
+        role = _ax_role(node)
+        name = _ax_name(node)
+        value = _ax_value(node)
+        backend_id = _ax_backend_id(node)
+        indent = "  " * min(depth, 6)
+
+        # ── Interactive element → assign ref ──
+        if role in _INTERACTIVE_ROLES and backend_id:
+            # Skip unnamed buttons/links (invisible noise)
+            if not name and role in ("button", "link", "menuitem"):
+                for cid in node.get("childIds", []):
+                    walk(cid, depth + 1)
+                return
+
+            ref_counter += 1
+            registry[ref_counter] = _Elem(
+                backend_node_id=backend_id,
+                role=role,
+                name=name,
+                value=value,
+            )
+
+            label = f"{role.capitalize()}"
+            detail = repr(name) if name else "(no label)"
+            if value and role in ("textbox", "searchbox", "combobox", "spinbutton"):
+                detail += f" value={repr(value)}"
+            elif value and role in ("checkbox", "radio", "switch"):
+                detail += f" [{value}]"
+
+            line = f"{indent}[{ref_counter:>3}] {label}: {detail}"
+            lines.append(line)
+            total_chars += len(line)
+            # Don't recurse into interactive element children
+            return
+
+        # ── Content element → show inline text ──
+        if role in _CONTENT_ROLES and name:
+            if role == "heading":
+                line = f"{indent}## {name}"
+            elif role in ("dialog", "alertdialog"):
+                line = f"{indent}⚠ DIALOG: {name}"
+            elif role in ("alert", "status"):
+                line = f"{indent}! {name}"
+            elif role in ("navigation",):
+                line = f"{indent}[nav: {name}]"
+            elif role == "listitem":
+                line = f"{indent}• {name}"
+            else:
+                line = f"{indent}{name}"
+
+            # Truncate very long text blocks
+            if len(line) > 200:
+                line = line[:197] + "..."
+            lines.append(line)
+            total_chars += len(line)
+
+        # ── Static text (leaf content) ──
+        elif role in ("statictext", "text") and name:
+            text = name[:200].strip()
+            if text and len(text) > 5:
+                line = f"{indent}{text}"
+                lines.append(line)
+                total_chars += len(line)
+
+        # Recurse into children
+        for cid in node.get("childIds", []):
+            walk(cid, depth + 1)
+
+    # Walk from roots
+    for rid in root_ids:
+        walk(rid, 0)
+
+    # If tree walk produced nothing, try flat fallback
+    if not lines:
+        for node in nodes:
+            if total_chars >= _MAX_SNAPSHOT_CHARS or ref_counter >= _MAX_ELEMENTS:
+                break
+            if _ax_ignored(node):
+                continue
+            role = _ax_role(node)
+            name = _ax_name(node)
+            backend_id = _ax_backend_id(node)
+
+            if role in _INTERACTIVE_ROLES and backend_id:
+                if not name and role in ("button", "link", "menuitem"):
+                    continue
+                ref_counter += 1
+                registry[ref_counter] = _Elem(
+                    backend_node_id=backend_id,
+                    role=role,
+                    name=name,
+                    value=_ax_value(node),
+                )
+                line = f"[{ref_counter:>3}] {role.capitalize()}: {repr(name)}"
+                lines.append(line)
+                total_chars += len(line)
+            elif role in _CONTENT_ROLES and name and len(name) > 3:
+                prefix = "## " if role == "heading" else ""
+                line = f"{prefix}{name[:200]}"
+                lines.append(line)
+                total_chars += len(line)
+
+    snapshot_body = "\n".join(lines) if lines else "(empty page — no content detected)"
+    return registry, snapshot_body
+
+
+async def _take_snapshot(page: Page, cdp: CDPSession) -> str:
+    """Build a full semantic snapshot and update the global registry."""
+    try:
+        title = await page.title()
+    except Exception:
+        title = "(unknown)"
+    url = page.url
+
+    nodes = await _get_ax_tree(cdp)
+    registry, body = _build_snapshot(nodes)
+    _REGISTRY[id(page)] = registry
+
+    interactive_count = len(registry)
+
+    # Tab list
+    tab_info = ""
+    try:
+        ctx = page.context
+        pages = ctx.pages
+        if len(pages) > 1:
+            tab_lines = []
+            for i, p in enumerate(pages):
+                marker = "→" if p == page else " "
+                tab_lines.append(f"  {marker} [{i}] {p.url[:80]}")
+            tab_info = "\nTabs:\n" + "\n".join(tab_lines) + "\n"
+    except Exception:
+        pass
+
+    header = f"URL: {url}\nTitle: {title}{tab_info}"
+    footer = f"\n({interactive_count} interactive elements. Use ref=N to interact.)"
+
+    return f"{header}\n\n{body}{footer}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Browser Session (Singleton)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BrowserSession:
+    _playwright: Optional[Playwright] = None
+    _browser: Optional[Browser] = None
+    _context: Optional[BrowserContext] = None
+    _page: Optional[Page] = None
+    _cdp: Optional[CDPSession] = None
+    _lock: asyncio.Lock = asyncio.Lock()
+
+    @classmethod
+    async def get_page(cls) -> Tuple[Page, CDPSession]:
+        async with cls._lock:
+            if cls._page is None or cls._page.is_closed():
+                await cls._launch()
+            # Verify CDP session is still alive
+            try:
+                await asyncio.wait_for(
+                    cls._cdp.send("Accessibility.getFullAXTree", {}),
+                    timeout=3.0,
+                )
+            except Exception:
+                # CDP session died — re-establish
+                log.info("CDP session stale, re-establishing...")
+                try:
+                    cls._cdp = await cls._context.new_cdp_session(cls._page)
+                    await cls._cdp.send("Accessibility.enable")
+                except Exception as e:
+                    log.error("CDP re-establish failed: %s", e)
+                    await cls._launch()
+            return cls._page, cls._cdp
+
+    @classmethod
+    async def _launch(cls) -> None:
+        # Clean up any existing session
+        if cls._browser:
+            try:
+                await cls._browser.close()
+            except Exception:
+                pass
+        if cls._playwright:
+            try:
+                await cls._playwright.stop()
+            except Exception:
+                pass
+
+        cls._playwright = await async_playwright().start()
+
+        _PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+
+        launch_args = [
+            "--no-sandbox",
+            "--disable-blink-features=AutomationControlled",
+            "--disable-infobars",
+            "--start-maximized",
+            "--disable-web-security",
+            "--disable-features=IsolateOrigins,site-per-process",
+        ]
+
+        # Use persistent context for real login persistence
+        cls._context = await cls._playwright.chromium.launch_persistent_context(
+            user_data_dir=str(_PROFILE_DIR),
+            headless=False,
+            args=launch_args,
+            viewport=_DEFAULT_VIEWPORT,
+            user_agent=_USER_AGENT,
+            locale="en-US",
+            timezone_id="America/New_York",
+            ignore_https_errors=True,
+        )
+
+        await cls._context.add_init_script(_STEALTH_JS)
+
+        # Use existing page or create new one
+        if cls._context.pages:
+            cls._page = cls._context.pages[0]
+        else:
+            cls._page = await cls._context.new_page()
+
+        cls._cdp = await cls._context.new_cdp_session(cls._page)
+        await cls._cdp.send("Accessibility.enable")
+        cls._browser = None  # persistent context doesn't use separate browser
+
+    @classmethod
+    async def close_all(cls) -> None:
+        if cls._cdp:
+            try:
+                await cls._cdp.detach()
+            except Exception:
+                pass
+        if cls._context:
+            try:
+                await cls._context.close()
+            except Exception:
+                pass
+        if cls._browser:
+            try:
+                await cls._browser.close()
+            except Exception:
+                pass
+        if cls._playwright:
+            try:
+                await cls._playwright.stop()
+            except Exception:
+                pass
+        cls._playwright = cls._browser = cls._context = cls._page = cls._cdp = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Intelligent Wait System
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _smart_wait(page: Page, timeout_ms: int = _SMART_WAIT_TIMEOUT) -> None:
+    """
+    OpenClaw-style smart wait: try networkidle first, fall back to domcontentloaded,
+    then a minimal sleep. Never blocks longer than timeout_ms.
+    """
+    try:
+        await page.wait_for_load_state("networkidle", timeout=timeout_ms)
+    except PlaywrightTimeout:
+        try:
+            await page.wait_for_load_state("domcontentloaded", timeout=1000)
+        except PlaywrightTimeout:
+            pass
+    # Small buffer for JS framework rendering (React, Vue, etc.)
+    await asyncio.sleep(0.3)
+
+
+async def _wait_for_navigation_settle(page: Page) -> None:
+    """Wait after a click that might cause navigation."""
+    try:
+        await page.wait_for_load_state("domcontentloaded", timeout=5000)
+    except PlaywrightTimeout:
+        pass
+    await _smart_wait(page, 3000)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CDP Interaction Primitives
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def _get_box(cdp: CDPSession, backend_node_id: int) -> Optional[Tuple[float, float]]:
+    """Get center coordinates of an element via CDP DOM.getBoxModel."""
+    try:
+        # Scroll element into view first
+        await cdp.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": backend_node_id})
+        await asyncio.sleep(0.1)
+    except Exception:
+        pass
+
+    try:
+        result = await cdp.send("DOM.getBoxModel", {"backendNodeId": backend_node_id})
+        box = result.get("model", {}).get("content")
+        if box and len(box) >= 8:
+            xs = [box[i] for i in range(0, 8, 2)]
+            ys = [box[i] for i in range(1, 8, 2)]
+            cx = sum(xs) / 4
+            cy = sum(ys) / 4
+            # Sanity check: coordinates should be within viewport
+            if cx > 0 and cy > 0:
+                return cx, cy
+    except Exception:
+        pass
+    return None
+
+
+async def _cdp_click(cdp: CDPSession, cx: float, cy: float) -> None:
+    """Click at coordinates using real CDP mouse events (move → press → release)."""
+    base = {"x": cx, "y": cy, "button": "left", "clickCount": 1, "modifiers": 0}
+    await cdp.send("Input.dispatchMouseEvent", {**base, "type": "mouseMoved", "buttons": 0})
+    await asyncio.sleep(0.03)
+    await cdp.send("Input.dispatchMouseEvent", {**base, "type": "mousePressed", "buttons": 1})
+    await asyncio.sleep(0.03)
+    await cdp.send("Input.dispatchMouseEvent", {**base, "type": "mouseReleased", "buttons": 0})
+
+
+async def _cdp_focus(cdp: CDPSession, backend_node_id: int) -> bool:
+    """Focus element via CDP DOM.focus. Returns True on success."""
+    try:
+        await cdp.send("DOM.focus", {"backendNodeId": backend_node_id})
+        return True
+    except Exception:
+        return False
+
+
+async def _cdp_type(cdp: CDPSession, text: str) -> None:
+    """Insert text using CDP Input.insertText (fires real composition events)."""
+    await cdp.send("Input.insertText", {"text": text})
+
+
+async def _cdp_key(cdp: CDPSession, key: str) -> None:
+    """
+    Dispatch a key event. Supports named keys and combos:
+    Tab, Enter, Escape, Backspace, Delete, ArrowDown, ArrowUp,
+    Control+a, Control+Enter, Control+c, Control+v, etc.
+    """
+    _KEY_MAP = {
+        "Tab":       ("Tab", 9, 0),
+        "Enter":     ("Return", 13, 0),
+        "Return":    ("Return", 13, 0),
+        "Escape":    ("Escape", 27, 0),
+        "Backspace": ("Backspace", 8, 0),
+        "Delete":    ("Delete", 46, 0),
+        "Space":     (" ", 32, 0),
+        "ArrowDown": ("ArrowDown", 40, 0),
+        "ArrowUp":   ("ArrowUp", 38, 0),
+        "ArrowLeft": ("ArrowLeft", 37, 0),
+        "ArrowRight":("ArrowRight", 39, 0),
+        "Home":      ("Home", 36, 0),
+        "End":       ("End", 35, 0),
+        "PageUp":    ("PageUp", 33, 0),
+        "PageDown":  ("PageDown", 34, 0),
+        # Combos (modifier bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8)
+        "Control+a": ("a", 65, 2),
+        "Control+c": ("c", 67, 2),
+        "Control+v": ("v", 86, 2),
+        "Control+x": ("x", 88, 2),
+        "Control+z": ("z", 90, 2),
+        "Control+Enter": ("Return", 13, 2),
+        "Shift+Tab": ("Tab", 9, 8),
+        "Shift+Enter": ("Return", 13, 8),
     }
 
-    // Fallback: semantic content
-    const root = document.querySelector('main,[role="main"],article,#content') || document.body;
-    const walk = (el, depth) => {
-        if (depth > 6 || !el) return;
-        if (['SCRIPT','STYLE','NAV','FOOTER','HEAD','NOSCRIPT'].includes(el.tagName||'')) return;
-        const st = window.getComputedStyle(el);
-        if (st.display === 'none' || st.visibility === 'hidden') return;
-        if (el.nodeType === 3) { add(el.textContent); return; }
-        const tag = (el.tagName||'').toLowerCase();
-        if (['h1','h2','h3'].includes(tag)) add(el.innerText, '# ');
-        else if (tag === 'li') add(el.innerText, '• ');
-        else if (['p','td','th'].includes(tag)) add(el.innerText);
-        for (const ch of el.childNodes) {
-            if (lines.join('\\n').length >= MAX) return;
-            walk(ch, depth + 1);
-        }
-    };
-    walk(root, 0);
-    return lines.join('\\n').slice(0, MAX) || document.title;
-}"""
+    mapped = _KEY_MAP.get(key)
+    if mapped:
+        key_name, key_code, mods = mapped
+    else:
+        key_name = key
+        key_code = ord(key[0]) if len(key) == 1 else 0
+        mods = 0
+
+    code = f"Key{key_name.upper()}" if len(key_name) == 1 else key_name
+
+    for t in ("keyDown", "keyUp"):
+        await cdp.send("Input.dispatchKeyEvent", {
+            "type": t,
+            "key": key_name,
+            "windowsVirtualKeyCode": key_code,
+            "nativeVirtualKeyCode": key_code,
+            "modifiers": mods,
+            "code": code,
+            "isKeypad": False,
+        })
+        await asyncio.sleep(0.02)
 
 
-# ── Cookie/banner dismissal ────────────────────────────────────────────────────
+async def _resolve_node(cdp: CDPSession, backend_node_id: int) -> Optional[str]:
+    """Resolve backendNodeId to a Runtime RemoteObjectId."""
+    try:
+        r = await cdp.send("DOM.resolveNode", {"backendNodeId": backend_node_id})
+        return r.get("object", {}).get("objectId")
+    except Exception:
+        return None
+
+
+async def _js_click(cdp: CDPSession, backend_node_id: int) -> bool:
+    """Fallback: click element via JS .click()."""
+    obj_id = await _resolve_node(cdp, backend_node_id)
+    if not obj_id:
+        return False
+    try:
+        await cdp.send("Runtime.callFunctionOn", {
+            "functionDeclaration": "function() { this.scrollIntoView({block:'center'}); this.click(); }",
+            "objectId": obj_id,
+        })
+        return True
+    except Exception:
+        return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  High-Level Actions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_elem(page: Page, ref: int) -> Optional[_Elem]:
+    """Look up an element by ref in the registry."""
+    return _REGISTRY.get(id(page), {}).get(ref)
+
+
+async def _do_click(page: Page, cdp: CDPSession, ref: int) -> str:
+    """Click an element with fallback chain: box-coords → scroll+retry → JS click."""
+    elem = _get_elem(page, ref)
+    if not elem:
+        return f"Error: ref [{ref}] not found. Run snapshot to refresh."
+
+    url_before = page.url
+
+    # Strategy 1: CDP box-model click
+    box = await _get_box(cdp, elem.backend_node_id)
+    if box:
+        cx, cy = box
+        await _cdp_click(cdp, cx, cy)
+        method = "cdp-click"
+    else:
+        # Strategy 2: JS click fallback
+        if await _js_click(cdp, elem.backend_node_id):
+            method = "js-click"
+        else:
+            # Strategy 3: Focus + Enter
+            if await _cdp_focus(cdp, elem.backend_node_id):
+                await _cdp_key(cdp, "Enter")
+                method = "focus-enter"
+            else:
+                return f"Error: could not click [{ref}] ({elem.role}: {elem.name})"
+
+    # Wait for potential navigation or JS update
+    await asyncio.sleep(0.3)
+    url_after = page.url
+    if url_after != url_before:
+        await _wait_for_navigation_settle(page)
+    else:
+        await _smart_wait(page, 2000)
+
+    return f"Clicked [{ref}] {elem.role}: {repr(elem.name)} ({method})"
+
+
+async def _do_fill(page: Page, cdp: CDPSession, ref: int, text: str) -> str:
+    """Fill an element: click to focus → clear existing → insert text."""
+    elem = _get_elem(page, ref)
+    if not elem:
+        return f"Error: ref [{ref}] not found. Run snapshot to refresh."
+
+    # Click to focus
+    box = await _get_box(cdp, elem.backend_node_id)
+    if box:
+        cx, cy = box
+        await _cdp_click(cdp, cx, cy)
+        await asyncio.sleep(0.1)
+    else:
+        if not await _cdp_focus(cdp, elem.backend_node_id):
+            return f"Error: could not focus [{ref}] ({elem.role}: {elem.name})"
+        await asyncio.sleep(0.1)
+
+    # Select all + delete (clear field)
+    await _cdp_key(cdp, "Control+a")
+    await asyncio.sleep(0.05)
+    await _cdp_key(cdp, "Delete")
+    await asyncio.sleep(0.05)
+
+    # Insert text
+    await _cdp_type(cdp, text)
+    await asyncio.sleep(0.15)
+
+    return f"Filled [{ref}] {elem.role}: {repr(elem.name)} with {repr(text)}"
+
+
+async def _do_type(page: Page, cdp: CDPSession, ref: int, text: str) -> str:
+    """Type into an element (append, don't clear)."""
+    elem = _get_elem(page, ref)
+    if not elem:
+        return f"Error: ref [{ref}] not found. Run snapshot to refresh."
+
+    box = await _get_box(cdp, elem.backend_node_id)
+    if box:
+        cx, cy = box
+        await _cdp_click(cdp, cx, cy)
+        await asyncio.sleep(0.1)
+    else:
+        if not await _cdp_focus(cdp, elem.backend_node_id):
+            return f"Error: could not focus [{ref}]"
+        await asyncio.sleep(0.1)
+
+    await _cdp_type(cdp, text)
+    await asyncio.sleep(0.1)
+
+    return f"Typed {repr(text)} into [{ref}] {elem.role}: {repr(elem.name)}"
+
+
+async def _do_hover(page: Page, cdp: CDPSession, ref: int) -> str:
+    """Hover over an element."""
+    elem = _get_elem(page, ref)
+    if not elem:
+        return f"Error: ref [{ref}] not found."
+
+    box = await _get_box(cdp, elem.backend_node_id)
+    if not box:
+        return f"Error: could not get coordinates for [{ref}]"
+
+    cx, cy = box
+    await cdp.send("Input.dispatchMouseEvent", {
+        "type": "mouseMoved", "x": cx, "y": cy,
+        "button": "none", "modifiers": 0,
+    })
+    await asyncio.sleep(0.5)
+    return f"Hovering over [{ref}] {elem.role}: {repr(elem.name)}"
+
+
+async def _do_select_option(cdp: CDPSession, page: Page, ref: int,
+                             value: Optional[str], text: Optional[str]) -> str:
+    """Select an option in a <select> or custom dropdown."""
+    elem = _get_elem(page, ref)
+    if not elem:
+        return f"Error: ref [{ref}] not found."
+
+    obj_id = await _resolve_node(cdp, elem.backend_node_id)
+    if not obj_id:
+        return f"Error: could not resolve [{ref}]"
+
+    try:
+        if value:
+            await cdp.send("Runtime.callFunctionOn", {
+                "functionDeclaration": f"""function() {{
+                    this.value = {json.dumps(value)};
+                    this.dispatchEvent(new Event('change', {{bubbles:true}}));
+                }}""",
+                "objectId": obj_id,
+            })
+        elif text:
+            await cdp.send("Runtime.callFunctionOn", {
+                "functionDeclaration": f"""function() {{
+                    for (const opt of this.options) {{
+                        if (opt.text.trim() === {json.dumps(text)}) {{
+                            this.value = opt.value;
+                            this.dispatchEvent(new Event('change', {{bubbles:true}}));
+                            break;
+                        }}
+                    }}
+                }}""",
+                "objectId": obj_id,
+            })
+        else:
+            return "Error: select_option needs value=... or text=..."
+        return f"Selected option in [{ref}]"
+    except Exception as e:
+        return f"select_option error: {e}"
+
+
+async def _do_upload(cdp: CDPSession, page: Page, ref: int, filepath: str) -> str:
+    """Upload a file via CDP DOM.setFileInputFiles."""
+    elem = _get_elem(page, ref)
+    if not elem:
+        return f"Error: ref [{ref}] not found."
+
+    if not os.path.isfile(filepath):
+        return f"Error: file not found: {filepath}"
+
+    try:
+        await cdp.send("DOM.setFileInputFiles", {
+            "files": [str(filepath)],
+            "backendNodeId": elem.backend_node_id,
+        })
+        await asyncio.sleep(0.5)
+        return f"Uploaded {filepath} to [{ref}]"
+    except Exception as e:
+        return f"upload error: {e}"
+
+
+async def _get_page_text(page: Page, cdp: CDPSession) -> str:
+    """
+    Extract readable page content from the AX tree.
+    Better than JS innerText — works through shadow DOM and iframes.
+    """
+    nodes = await _get_ax_tree(cdp)
+    lines: List[str] = []
+    total = 0
+    limit = 6000
+
+    for node in nodes:
+        if total >= limit:
+            break
+        if _ax_ignored(node):
+            continue
+        role = _ax_role(node)
+        name = _ax_name(node)
+        if not name or len(name.strip()) < 3:
+            continue
+
+        if role in ("heading",):
+            line = f"## {name}"
+        elif role in ("listitem",):
+            line = f"• {name}"
+        elif role in ("link",):
+            line = f"[{name}]"
+        elif role in ("statictext", "text", "paragraph", "blockquote",
+                       "cell", "gridcell", "caption", "definition"):
+            line = name
+        elif role in ("row",):
+            line = f"| {name}"
+        else:
+            continue
+
+        if len(line) > 300:
+            line = line[:297] + "..."
+        lines.append(line)
+        total += len(line)
+
+    if not lines:
+        # Fallback to JS extraction
+        try:
+            text = await page.evaluate("""() => {
+                const root = document.querySelector('main,[role="main"],article,#content') || document.body;
+                return root.innerText.slice(0, 6000);
+            }""")
+            return text or "(empty page)"
+        except Exception:
+            return "(could not extract text)"
+
+    return "\n".join(lines)
+
+
 async def _dismiss_banners(page: Page) -> None:
+    """Try to dismiss cookie/consent banners."""
     selectors = [
         'button[id*="accept"]', 'button[id*="cookie"]', 'button[id*="consent"]',
         'button[class*="accept"]', 'button[class*="cookie"]',
@@ -158,388 +884,14 @@ async def _dismiss_banners(page: Page) -> None:
             if await btn.is_visible(timeout=300):
                 await btn.click(timeout=500)
                 await asyncio.sleep(0.3)
-                break
+                return
         except Exception:
             pass
 
 
-# ── BrowserSession (singleton) ─────────────────────────────────────────────────
-class BrowserSession:
-    _playwright:  Optional[Playwright]     = None
-    _browser:     Optional[Browser]        = None
-    _context:     Optional[BrowserContext] = None
-    _page:        Optional[Page]           = None
-    _cdp:         Optional[CDPSession]     = None
-    _lock:        asyncio.Lock             = asyncio.Lock()
-
-    @classmethod
-    async def get_page(cls) -> Tuple[Page, CDPSession]:
-        async with cls._lock:
-            if cls._page is None or cls._page.is_closed():
-                await cls._launch()
-            return cls._page, cls._cdp   # type: ignore[return-value]
-
-    @classmethod
-    async def _launch(cls) -> None:
-        if cls._playwright is None:
-            cls._playwright = await async_playwright().start()
-
-        launch_args = [
-            "--no-sandbox", "--disable-blink-features=AutomationControlled",
-            "--disable-infobars", "--start-maximized",
-            "--disable-web-security", "--disable-features=IsolateOrigins",
-        ]
-
-        cls._browser = await cls._playwright.chromium.launch(
-            headless=False,
-            args=launch_args,
-        )
-
-        storage: dict = {}
-        if _STATE.exists():
-            try:
-                storage = json.loads(_STATE.read_text())
-            except Exception:
-                pass
-
-        ctx_kwargs: dict = {
-            "viewport": {"width": 1366, "height": 768},
-            "user_agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/121.0.0.0 Safari/537.36"
-            ),
-            "locale": "en-US",
-            "timezone_id": "America/New_York",
-        }
-        if storage:
-            ctx_kwargs["storage_state"] = storage
-
-        cls._context = await cls._browser.new_context(**ctx_kwargs)
-        await cls._context.add_init_script(_JS_STEALTH)
-
-        cls._page = await cls._context.new_page()
-
-        # ── Open a CDP session on this context for Accessibility + Input APIs ──
-        cls._cdp = await cls._context.new_cdp_session(cls._page)
-        await cls._cdp.send("Accessibility.enable")
-
-    @classmethod
-    async def save_state(cls) -> None:
-        if cls._context:
-            try:
-                state = await cls._context.storage_state()
-                _STATE.parent.mkdir(parents=True, exist_ok=True)
-                _STATE.write_text(json.dumps(state))
-            except Exception:
-                pass
-
-    @classmethod
-    async def close_all(cls) -> None:
-        await cls.save_state()
-        if cls._cdp:
-            try:
-                await cls._cdp.detach()
-            except Exception:
-                pass
-        if cls._browser:
-            await cls._browser.close()
-        if cls._playwright:
-            await cls._playwright.stop()
-        cls._playwright = cls._browser = cls._context = cls._page = cls._cdp = None
-
-
-# ── CDP helpers ────────────────────────────────────────────────────────────────
-
-async def _ax_snapshot(cdp: CDPSession) -> List[dict]:
-    """Return the full AX tree as a flat list of AX node dicts."""
-    try:
-        result = await asyncio.wait_for(
-            cdp.send("Accessibility.getFullAXTree", {}),
-            timeout=8.0,
-        )
-        return result.get("nodes", [])
-    except Exception as e:
-        return []
-
-
-def _ax_name(node: dict) -> str:
-    """Extract the best accessible name from an AX node."""
-    for prop in node.get("properties", []):
-        if prop.get("name") in ("name",):
-            return (prop.get("value", {}).get("value") or "").strip()
-    nv = node.get("name", {})
-    if isinstance(nv, dict):
-        return (nv.get("value") or "").strip()
-    return (nv or "").strip()
-
-
-def _ax_role(node: dict) -> str:
-    rv = node.get("role", {})
-    if isinstance(rv, dict):
-        return (rv.get("value") or "").lower().strip()
-    return (rv or "").lower().strip()
-
-
-def _ax_ignored(node: dict) -> bool:
-    return bool(node.get("ignored", False))
-
-
-def _ax_backend_id(node: dict) -> Optional[int]:
-    bid = node.get("backendDOMNodeId")
-    if bid:
-        return int(bid)
-    return None
-
-
-def _build_registry(nodes: List[dict]) -> Tuple[Dict[int, _Elem], List[dict]]:
-    """
-    Walk the flat AX node list. Only register roles in _INTERACTIVE_ROLES.
-    This is a strict whitelist — structural/decorative nodes are never registered,
-    so interactive elements like Gmail's To combobox always get a ref number.
-    Returns (registry_dict, display_rows).
-    """
-    registry: Dict[int, _Elem] = {}
-    rows: List[dict] = []
-    ref = 0
-
-    for node in nodes:
-        if ref >= _MAX_ELEMENTS:
-            break
-        if _ax_ignored(node):
-            continue
-        role = _ax_role(node)
-        # Strict whitelist — only interactive roles get registered
-        if role not in _INTERACTIVE_ROLES:
-            continue
-        backend_id = _ax_backend_id(node)
-        if not backend_id:
-            continue
-        name = _ax_name(node)
-        # Skip empty-label buttons/links (invisible noise)
-        if not name and role in ("button", "link", "menuitem"):
-            continue
-
-        ref += 1
-        registry[ref] = _Elem(
-            backend_node_id=backend_id,
-            role=role,
-            name=name,
-        )
-        rows.append({"ref": ref, "role": role, "name": name})
-
-    return registry, rows
-
-
-
-async def _take_snapshot(page: Page, cdp: CDPSession) -> str:
-    """Build snapshot string and update the global registry."""
-    title = await page.title()
-    url   = page.url
-
-    nodes   = await _ax_snapshot(cdp)
-    reg, rows = _build_registry(nodes)
-    _REGISTRY[id(page)] = reg
-
-    parts: List[str] = [f"URL: {url}", f"Title: {title}", ""]
-    if not rows:
-        parts.append("(no interactive elements found)")
-    else:
-        # Group by role family for readability
-        for r in rows:
-            role_label = r["role"].capitalize()
-            name       = r["name"] or "(no label)"
-            parts.append(f"[{r['ref']:>3}] {role_label}: {repr(name)}")
-
-    return "\n".join(parts)
-
-
-# ── CDP interaction primitives ─────────────────────────────────────────────────
-
-async def _get_box(cdp: CDPSession, backend_node_id: int) -> Optional[Tuple[float, float]]:
-    """Return (cx, cy) centre coordinates for the element, or None."""
-    try:
-        result = await cdp.send("DOM.getBoxModel", {"backendNodeId": backend_node_id})
-        box = result.get("model", {}).get("content")  # [x0,y0, x1,y1, x2,y2, x3,y3]
-        if box and len(box) >= 8:
-            xs = [box[i] for i in range(0, 8, 2)]
-            ys = [box[i] for i in range(1, 8, 2)]
-            return sum(xs) / 4, sum(ys) / 4
-    except Exception:
-        pass
-    # Fallback: ask JS for the bounding rect
-    try:
-        js = f"""
-        (function() {{
-            const el = document.querySelector('[data-sbref]') || null;
-            // use CDP resolved node instead — we'll try DOM.resolveNode
-            return null;
-        }})()
-        """
-    except Exception:
-        pass
-    return None
-
-
-async def _cdp_resolve_node(cdp: CDPSession, backend_node_id: int) -> Optional[str]:
-    """Resolve a backendNodeId to a Runtime.RemoteObjectId (JS object handle)."""
-    try:
-        r = await cdp.send("DOM.resolveNode", {"backendNodeId": backend_node_id})
-        return r.get("object", {}).get("objectId")
-    except Exception:
-        return None
-
-
-async def _cdp_focus(cdp: CDPSession, backend_node_id: int) -> None:
-    """Focus element via CDP DOM domain."""
-    try:
-        await cdp.send("DOM.focus", {"backendNodeId": backend_node_id})
-    except Exception:
-        pass
-
-
-async def _cdp_click(cdp: CDPSession, cx: float, cy: float) -> None:
-    """Click at (cx, cy) using real CDP mouse events."""
-    base = {"x": cx, "y": cy, "button": "left", "clickCount": 1,
-            "modifiers": 0, "buttons": 0}
-    await cdp.send("Input.dispatchMouseEvent", {**base, "type": "mouseMoved"})
-    await asyncio.sleep(0.05)
-    await cdp.send("Input.dispatchMouseEvent", {**base, "type": "mousePressed", "buttons": 1})
-    await asyncio.sleep(0.05)
-    await cdp.send("Input.dispatchMouseEvent", {**base, "type": "mouseReleased", "buttons": 0})
-
-
-async def _cdp_type(cdp: CDPSession, text: str) -> None:
-    """
-    Insert text into the currently focused element using CDP Input.insertText.
-    This fires real composition events — required by Gmail, Workday, React, etc.
-    """
-    await cdp.send("Input.insertText", {"text": text})
-
-
-async def _cdp_key(cdp: CDPSession, key: str) -> None:
-    """
-    Dispatch a named key event (Tab, Enter, Escape, Backspace, ArrowDown…).
-    Also supports combos like Control+a, Control+Enter.
-    """
-    # Key name → CDP key name mapping
-    _KEY_MAP = {
-        "Tab": ("Tab", 9), "Enter": ("Return", 13), "Return": ("Return", 13),
-        "Escape": ("Escape", 27), "Backspace": ("Backspace", 8),
-        "Delete": ("Delete", 46), "ArrowDown": ("ArrowDown", 40),
-        "ArrowUp": ("ArrowUp", 38), "ArrowLeft": ("ArrowLeft", 37),
-        "ArrowRight": ("ArrowRight", 39),
-        "Control+a": ("a", 65, 2),   # 2 = Ctrl modifier
-        "Control+Enter": ("Return", 13, 2),
-        "Control+c": ("c", 67, 2), "Control+v": ("v", 86, 2),
-        "Control+x": ("x", 88, 2), "Control+z": ("z", 90, 2),
-        "Control+Shift+C": ("c", 67, 6),  # Ctrl+Shift
-        "Control+Shift+B": ("b", 66, 6),
-    }
-    mapped = _KEY_MAP.get(key)
-    mods = 0
-    if mapped:
-        key_name = mapped[0]
-        key_code = mapped[1]
-        mods = mapped[2] if len(mapped) > 2 else 0
-    else:
-        key_name = key
-        key_code = ord(key[0]) if len(key) == 1 else 0
-
-    for t in ("keyDown", "keyUp"):
-        await cdp.send("Input.dispatchKeyEvent", {
-            "type": t,
-            "key": key_name,
-            "windowsVirtualKeyCode": key_code,
-            "nativeVirtualKeyCode": key_code,
-            "modifiers": mods,
-            "code": f"Key{key_name.upper()}" if len(key_name) == 1 else key_name,
-            "isKeypad": False,
-        })
-        await asyncio.sleep(0.03)
-
-
-async def _fill_element(
-    page: Page,
-    cdp: CDPSession,
-    ref: int,
-    text: str,
-) -> str:
-    """
-    Fill an element: get coords → click to focus → clear → insertText.
-    Returns status string.
-    """
-    reg = _REGISTRY.get(id(page), {})
-    if ref not in reg:
-        return f"Error: ref [{ref}] not in registry. Run snapshot first."
-    elem = reg[ref]
-
-    # Strategy A: CDP click via DOM.getBoxModel
-    cx, cy = None, None
-    box = await _get_box(cdp, elem.backend_node_id)
-    if box:
-        cx, cy = box
-
-    if cx is not None:
-        await _cdp_click(cdp, cx, cy)
-        await asyncio.sleep(0.15)
-    else:
-        # Fallback: focus via DOM.focus
-        await _cdp_focus(cdp, elem.backend_node_id)
-        await asyncio.sleep(0.15)
-
-    # Strategy 1: DOM.focus then insertText
-    try:
-        # Select all existing text and delete it
-        await _cdp_key(cdp, "Control+a")
-        await asyncio.sleep(0.05)
-        await _cdp_key(cdp, "Delete")
-        await asyncio.sleep(0.05)
-        await _cdp_type(cdp, text)
-        return f"ok-cdp-insertText"
-    except Exception as e1:
-        pass
-
-    # Strategy 2: Playwright locator fill (for standard inputs)
-    try:
-        loc = page.locator(f"[data-sbref='{ref}']").first
-        if await loc.count() > 0:
-            await loc.fill(text, timeout=3000)
-            return f"ok-playwright-fill"
-    except Exception as e2:
-        pass
-
-    return f"Error: all fill strategies failed for [{ref}]"
-
-
-async def _click_element(page: Page, cdp: CDPSession, ref: int) -> str:
-    reg = _REGISTRY.get(id(page), {})
-    if ref not in reg:
-        return f"Error: ref [{ref}] not in registry."
-    elem = reg[ref]
-
-    box = await _get_box(cdp, elem.backend_node_id)
-    if box:
-        cx, cy = box
-        await _cdp_click(cdp, cx, cy)
-        return "ok-cdp-click"
-
-    # Fallback: Playwright locator click via backendNodeId JS lookup
-    try:
-        obj_id = await _cdp_resolve_node(cdp, elem.backend_node_id)
-        if obj_id:
-            await cdp.send("Runtime.callFunctionOn", {
-                "functionDeclaration": "function() { this.click(); }",
-                "objectId": obj_id,
-            })
-            return "ok-js-click"
-    except Exception:
-        pass
-
-    return f"Error: could not click [{ref}]"
-
-
-# ── Main tool ──────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Main Tool — browser_act
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @tool
 async def browser_act(
@@ -554,296 +906,282 @@ async def browser_act(
     duration:  Optional[int] = 2,
     key:       Optional[str] = None,
     index:     Optional[int] = None,
+    selector:  Optional[str] = None,
 ) -> str:
     """
-    Autonomous browser — site-agnostic across Gmail, Amazon, Workday, Reddit, X.com.
-
-    DISCOVERY  : CDP Accessibility.getFullAXTree → real AX tree, works through dialogs.
-    INTERACTION: CDP Input.insertText + Input.dispatchMouseEvent → real hardware events.
-                 Gmail, React forms, Workday — all respond correctly.
+    Autonomous browser control — site-agnostic. Works on Gmail, Amazon, Reddit,
+    login pages, dashboards, SPAs, and any website.
 
     ACTIONS:
-    ────────────────────────────────────────────────────────────────────────────────
-    navigate       Go to URL          url="https://..."
-    snapshot       Re-read page       (no args)
-    get_text       Page text only     (no args) — emails, articles
-    click          Click element      ref=N
-    fill           Clear + fill field ref=N, text="..."   ← BEST for any input
-    type           Append to field    ref=N, text="..."
-    press          Keyboard key       key="Tab"/"Enter"/"Escape"/"Control+Enter"/"ArrowDown"
-    hover          Hover element      ref=N
-    select_option  Pick dropdown      ref=N, value="val" OR text="Label"
-    upload_file    Upload a file      ref=N, filepath="/abs/path/file.pdf"
-    scroll         Scroll page        direction="down"/"up", amount=600
-    wait           Wait + re-snapshot duration=2
-    screenshot     Save screenshot    (no args)
-    back/forward   Browser nav        (no args)
-    new_tab        Open in new tab    url="https://..."
-    switch_tab     Change tab         index=N
-    close_tab      Close tab          (no args)
-    close          Close browser      (no args)
-    ────────────────────────────────────────────────────────────────────────────────
-    GMAIL COMPOSE — correct workflow:
-      snapshot → find [N] Button: 'Compose' → click(ref=N)
-      wait(duration=2)
-      snapshot → find [M] Combobox: 'To'    → fill(ref=M, text="addr@email.com")
-      press(key="Tab")
-      snapshot → find [P] Textbox: 'Subject' → fill(ref=P, text="Subject here")
-      snapshot → find [Q] Textbox: 'Message Body' → fill(ref=Q, text="Body here")
-      snapshot → find [R] Button: 'Send' → click(ref=R)
+    ────────────────────────────────────────────────────────────────────────────
+    navigate       Go to URL              url="https://..."
+    snapshot       Re-read page state     (no args — returns full page structure)
+    get_text       Extract readable text  (no args — articles, emails, content)
+    click          Click element          ref=N
+    fill           Clear + fill field     ref=N, text="..."
+    type           Append to field        ref=N, text="..."
+    press          Keyboard key           key="Tab"/"Enter"/"Escape"/"Control+a"
+    hover          Hover element          ref=N
+    select_option  Pick dropdown          ref=N, value="val" OR text="Label"
+    upload_file    Upload a file          ref=N, filepath="/path/to/file"
+    scroll         Scroll page            direction="down"/"up", amount=600
+    wait           Wait + re-snapshot     duration=2 (seconds)
+    wait_for       Wait for condition     selector="#login-form" / url="**/dash"
+    screenshot     Save screenshot        (no args)
+    back           Browser back           (no args)
+    forward        Browser forward        (no args)
+    new_tab        Open new tab           url="https://..."
+    switch_tab     Change tab             index=N
+    close_tab      Close current tab      (no args)
+    close          Close browser          (no args)
+    ────────────────────────────────────────────────────────────────────────────
 
-    MAIL.COM, WORKDAY — same fill/click pattern. wait(duration=3) after page loads.
-    AMAZON — select_option for dropdowns. scroll to see more products.
-    ────────────────────────────────────────────────────────────────────────────────
+    WORKFLOW (how to browse autonomously):
+      1. navigate to URL → read the snapshot
+      2. Understand the page structure from headings and text
+      3. Find the element you need by ref number
+      4. click/fill/type using ref=N
+      5. Read the new snapshot returned after each action
+      6. Repeat until task is complete
+
+    TIPS:
+      • Every action returns a fresh snapshot — no need to call snapshot separately
+      • Use fill (not type) for input fields — it clears first
+      • After clicking a link/button, the snapshot shows the NEW page
+      • Use wait_for when you need a specific element to appear (SPAs, slow pages)
+      • Use get_text for reading article content, emails, long text
     """
     action = action.lower().strip()
 
+    # ── CLOSE ──────────────────────────────────────────────────────────────
     if action == "close":
         await BrowserSession.close_all()
         return "Browser closed."
 
+    # Get page (auto-launches if needed)
     try:
         page, cdp = await BrowserSession.get_page()
     except Exception as e:
-        return f"Browser start failed: {e}"
+        return f"Browser launch failed: {e}\n{traceback.format_exc()}"
 
-    # ── NAVIGATE ────────────────────────────────────────────────────────────────
+    try:
+        return await _dispatch(action, page, cdp,
+                               url=url, ref=ref, text=text, value=value,
+                               filepath=filepath, direction=direction,
+                               amount=amount, duration=duration, key=key,
+                               index=index, selector=selector)
+    except Exception as e:
+        log.error("browser_act error: %s", traceback.format_exc())
+        # Try to recover with a fresh snapshot
+        try:
+            snap = await _take_snapshot(page, cdp)
+            return f"Error during '{action}': {e}\n\nCurrent page state:\n{snap}"
+        except Exception:
+            return f"Error during '{action}': {e}"
+
+
+async def _dispatch(action: str, page: Page, cdp: CDPSession, **kw) -> str:
+    """Dispatch to the appropriate action handler."""
+
+    # ── NAVIGATE ───────────────────────────────────────────────────────────
     if action == "navigate":
+        url = kw.get("url")
         if not url:
             return "Error: navigate needs url=..."
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(2.5)
+            await page.goto(url, wait_until="domcontentloaded", timeout=_NAV_TIMEOUT)
+            await _smart_wait(page)
             await _dismiss_banners(page)
-            await BrowserSession.save_state()
-            snap = await _take_snapshot(page, cdp)
-            return f"Navigated to {url}.\n\n{snap}"
+        except PlaywrightTimeout:
+            pass  # Page may still be usable
         except Exception as e:
             return f"Navigation error: {e}"
+        snap = await _take_snapshot(page, cdp)
+        return f"Navigated to {url}\n\n{snap}"
 
-    # ── SNAPSHOT ─────────────────────────────────────────────────────────────────
+    # ── SNAPSHOT ───────────────────────────────────────────────────────────
     if action == "snapshot":
         return await _take_snapshot(page, cdp)
 
-    # ── GET_TEXT ─────────────────────────────────────────────────────────────────
+    # ── GET_TEXT ────────────────────────────────────────────────────────────
     if action == "get_text":
-        try:
-            content = await asyncio.wait_for(page.evaluate(_JS_CONTENT), timeout=6.0)
-            title   = await page.title()
-            return f"URL: {page.url}\nTitle: {title}\n\n--- Content ---\n{content.strip() or '(nothing)'}"
-        except Exception as e:
-            return f"get_text error: {e}"
+        title = await page.title()
+        content = await _get_page_text(page, cdp)
+        return f"URL: {page.url}\nTitle: {title}\n\n{content}"
 
-    # ── WAIT ─────────────────────────────────────────────────────────────────────
-    if action == "wait":
-        await asyncio.sleep(duration or 2)
-        return await _take_snapshot(page, cdp)
-
-    # ── SCREENSHOT ───────────────────────────────────────────────────────────────
-    if action == "screenshot":
-        ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = str(_SHOTS / f"shot_{ts}.png")
-        await page.screenshot(path=path, full_page=False)
-        return f"Screenshot saved: {path}"
-
-    # ── SCROLL ───────────────────────────────────────────────────────────────────
-    if action == "scroll":
-        dy = -(amount or 600) if direction == "up" else (amount or 600)
-        await page.mouse.wheel(0, dy)
-        await asyncio.sleep(0.6)
-        return await _take_snapshot(page, cdp)
-
-    # ── BACK / FORWARD ───────────────────────────────────────────────────────────
-    if action == "back":
-        await page.go_back(wait_until="domcontentloaded", timeout=10000)
-        await asyncio.sleep(1.5)
-        return await _take_snapshot(page, cdp)
-
-    if action == "forward":
-        await page.go_forward(wait_until="domcontentloaded", timeout=10000)
-        await asyncio.sleep(1.5)
-        return await _take_snapshot(page, cdp)
-
-    # ── TAB MANAGEMENT ───────────────────────────────────────────────────────────
-    if action == "new_tab":
-        if not url:
-            return "Error: new_tab needs url=..."
-        ctx = BrowserSession._context
-        if not ctx:
-            return "Error: no browser context."
-        new_page = await ctx.new_page()
-        BrowserSession._page = new_page
-        BrowserSession._cdp  = await ctx.new_cdp_session(new_page)
-        await BrowserSession._cdp.send("Accessibility.enable")
-        cdp  = BrowserSession._cdp
-        page = new_page
-        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(2.0)
-        return await _take_snapshot(page, cdp)
-
-    if action == "switch_tab":
-        ctx = BrowserSession._context
-        if not ctx:
-            return "Error: no browser context."
-        pages = ctx.pages
-        idx   = index or 0
-        if idx < 0 or idx >= len(pages):
-            return f"Error: tab index {idx} out of range (0–{len(pages)-1})."
-        BrowserSession._page = pages[idx]
-        BrowserSession._cdp  = await ctx.new_cdp_session(pages[idx])
-        await BrowserSession._cdp.send("Accessibility.enable")
-        cdp  = BrowserSession._cdp
-        page = BrowserSession._page
-        return await _take_snapshot(page, cdp)
-
-    if action == "close_tab":
-        ctx = BrowserSession._context
-        if not ctx:
-            return "Error: no browser context."
-        await page.close()
-        remaining = ctx.pages
-        if remaining:
-            BrowserSession._page = remaining[-1]
-            BrowserSession._cdp  = await ctx.new_cdp_session(remaining[-1])
-            await BrowserSession._cdp.send("Accessibility.enable")
-            return await _take_snapshot(BrowserSession._page, BrowserSession._cdp)
-        return "Tab closed. No remaining tabs."
-
-    # ── PRESS ────────────────────────────────────────────────────────────────────
-    if action == "press":
-        if not key:
-            return "Error: press needs key=..."
-        await _cdp_key(cdp, key)
-        await asyncio.sleep(0.4)
-        return await _take_snapshot(page, cdp)
-
-    # ── HOVER ────────────────────────────────────────────────────────────────────
-    if action == "hover":
-        if ref is None:
-            return "Error: hover needs ref=N"
-        reg = _REGISTRY.get(id(page), {})
-        if ref not in reg:
-            return f"Error: ref [{ref}] not found."
-        elem = reg[ref]
-        box  = await _get_box(cdp, elem.backend_node_id)
-        if box:
-            cx, cy = box
-            await cdp.send("Input.dispatchMouseEvent", {
-                "type": "mouseMoved", "x": cx, "y": cy,
-                "button": "none", "modifiers": 0,
-            })
-            await asyncio.sleep(0.7)
-            return await _take_snapshot(page, cdp)
-        return f"Could not get coordinates for [{ref}]."
-
-    # ── CLICK ────────────────────────────────────────────────────────────────────
+    # ── CLICK ──────────────────────────────────────────────────────────────
     if action == "click":
+        ref = kw.get("ref")
         if ref is None:
             return "Error: click needs ref=N"
-        status = await _click_element(page, cdp, ref)
-        await asyncio.sleep(0.8)
-        await BrowserSession.save_state()
+        result = await _do_click(page, cdp, ref)
         snap = await _take_snapshot(page, cdp)
-        return f"Clicked [{ref}] ({status}).\n\n{snap}"
+        return f"{result}\n\n{snap}"
 
-    # ── FILL ─────────────────────────────────────────────────────────────────────
+    # ── FILL ───────────────────────────────────────────────────────────────
     if action == "fill":
+        ref, text = kw.get("ref"), kw.get("text")
         if ref is None:
             return "Error: fill needs ref=N"
         if text is None:
             return "Error: fill needs text=..."
-        status = await _fill_element(page, cdp, ref, text)
-        await asyncio.sleep(0.3)
-        await BrowserSession.save_state()
+        result = await _do_fill(page, cdp, ref, text)
         snap = await _take_snapshot(page, cdp)
-        return f"Filled [{ref}] with {repr(text)} ({status}).\n\n{snap}"
+        return f"{result}\n\n{snap}"
 
-    # ── TYPE (append) ─────────────────────────────────────────────────────────────
+    # ── TYPE ───────────────────────────────────────────────────────────────
     if action == "type":
+        ref, text = kw.get("ref"), kw.get("text")
         if ref is None:
             return "Error: type needs ref=N"
         if text is None:
             return "Error: type needs text=..."
-        reg = _REGISTRY.get(id(page), {})
-        if ref not in reg:
-            return f"Error: ref [{ref}] not found."
-        elem = reg[ref]
-        box  = await _get_box(cdp, elem.backend_node_id)
-        if box:
-            cx, cy = box
-            await _cdp_click(cdp, cx, cy)
-            await asyncio.sleep(0.15)
-        else:
-            await _cdp_focus(cdp, elem.backend_node_id)
-            await asyncio.sleep(0.15)
-        await _cdp_type(cdp, text)
+        result = await _do_type(page, cdp, ref, text)
+        snap = await _take_snapshot(page, cdp)
+        return f"{result}\n\n{snap}"
+
+    # ── PRESS ──────────────────────────────────────────────────────────────
+    if action == "press":
+        key = kw.get("key")
+        if not key:
+            return "Error: press needs key=..."
+        await _cdp_key(cdp, key)
         await asyncio.sleep(0.3)
         snap = await _take_snapshot(page, cdp)
-        return f"Typed {repr(text)} into [{ref}].\n\n{snap}"
+        return f"Pressed {key}\n\n{snap}"
 
-    # ── SELECT_OPTION ─────────────────────────────────────────────────────────────
+    # ── HOVER ──────────────────────────────────────────────────────────────
+    if action == "hover":
+        ref = kw.get("ref")
+        if ref is None:
+            return "Error: hover needs ref=N"
+        result = await _do_hover(page, cdp, ref)
+        snap = await _take_snapshot(page, cdp)
+        return f"{result}\n\n{snap}"
+
+    # ── SELECT_OPTION ──────────────────────────────────────────────────────
     if action == "select_option":
+        ref = kw.get("ref")
         if ref is None:
             return "Error: select_option needs ref=N"
-        reg = _REGISTRY.get(id(page), {})
-        if ref not in reg:
-            return f"Error: ref [{ref}] not found."
-        elem    = reg[ref]
-        # Resolve to JS object for select interaction
-        obj_id  = await _cdp_resolve_node(cdp, elem.backend_node_id)
-        if not obj_id:
-            return f"Error: could not resolve element [{ref}]."
-        try:
-            if value:
-                await cdp.send("Runtime.callFunctionOn", {
-                    "functionDeclaration": f"function() {{ this.value = {json.dumps(value)}; this.dispatchEvent(new Event('change', {{bubbles:true}})); }}",
-                    "objectId": obj_id,
-                })
-            elif text:
-                await cdp.send("Runtime.callFunctionOn", {
-                    "functionDeclaration": f"""function() {{
-                        for (const opt of this.options) {{
-                            if (opt.text.trim() === {json.dumps(text)}) {{
-                                this.value = opt.value;
-                                this.dispatchEvent(new Event('change', {{bubbles:true}}));
-                                break;
-                            }}
-                        }}
-                    }}""",
-                    "objectId": obj_id,
-                })
-            snap = await _take_snapshot(page, cdp)
-            return f"Selected option in [{ref}].\n\n{snap}"
-        except Exception as e:
-            return f"select_option error: {e}"
+        result = await _do_select_option(cdp, page, ref, kw.get("value"), kw.get("text"))
+        snap = await _take_snapshot(page, cdp)
+        return f"{result}\n\n{snap}"
 
-    # ── UPLOAD_FILE ───────────────────────────────────────────────────────────────
+    # ── UPLOAD_FILE ────────────────────────────────────────────────────────
     if action == "upload_file":
+        ref = kw.get("ref")
+        filepath = kw.get("filepath")
         if ref is None:
             return "Error: upload_file needs ref=N"
         if not filepath:
             return "Error: upload_file needs filepath=..."
-        reg = _REGISTRY.get(id(page), {})
-        if ref not in reg:
-            return f"Error: ref [{ref}] not found."
-        elem = reg[ref]
-        obj_id = await _cdp_resolve_node(cdp, elem.backend_node_id)
-        if not obj_id:
-            return f"Error: could not resolve [{ref}]."
-        try:
-            # Use Playwright's set_input_files via JS-resolved node
-            loc = page.locator(f"[data-upload-ref]").first
-            # CDP-based file input via DOM
-            r = await cdp.send("DOM.resolveNode", {"backendNodeId": elem.backend_node_id})
-            node_obj_id = r.get("object", {}).get("objectId")
-            if node_obj_id:
-                await cdp.send("DOM.setFileInputFiles", {
-                    "files": [str(filepath)],
-                    "backendNodeId": elem.backend_node_id,
-                })
-            snap = await _take_snapshot(page, cdp)
-            return f"Uploaded {filepath} to [{ref}].\n\n{snap}"
-        except Exception as e:
-            return f"upload_file error: {e}"
+        result = await _do_upload(cdp, page, ref, filepath)
+        snap = await _take_snapshot(page, cdp)
+        return f"{result}\n\n{snap}"
 
-    return f"Unknown action: '{action}'. See docstring for valid actions."
+    # ── SCROLL ─────────────────────────────────────────────────────────────
+    if action == "scroll":
+        direction = kw.get("direction", "down")
+        amount = kw.get("amount", 600)
+        dy = -(amount) if direction == "up" else amount
+        await page.mouse.wheel(0, dy)
+        await asyncio.sleep(0.4)
+        snap = await _take_snapshot(page, cdp)
+        return f"Scrolled {direction} {amount}px\n\n{snap}"
+
+    # ── WAIT ───────────────────────────────────────────────────────────────
+    if action == "wait":
+        duration = kw.get("duration", 2)
+        await asyncio.sleep(duration)
+        snap = await _take_snapshot(page, cdp)
+        return f"Waited {duration}s\n\n{snap}"
+
+    # ── WAIT_FOR (OpenClaw power-up) ───────────────────────────────────────
+    if action == "wait_for":
+        selector = kw.get("selector")
+        url = kw.get("url")
+        timeout = (kw.get("duration") or 10) * 1000
+
+        try:
+            if selector:
+                await page.wait_for_selector(selector, timeout=timeout)
+            elif url:
+                await page.wait_for_url(url, timeout=timeout)
+            else:
+                await page.wait_for_load_state("networkidle", timeout=timeout)
+        except PlaywrightTimeout:
+            pass
+
+        snap = await _take_snapshot(page, cdp)
+        return f"Wait complete\n\n{snap}"
+
+    # ── SCREENSHOT ─────────────────────────────────────────────────────────
+    if action == "screenshot":
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = str(_SHOTS_DIR / f"shot_{ts}.png")
+        await page.screenshot(path=path, full_page=False)
+        return f"Screenshot saved: {path}"
+
+    # ── BACK / FORWARD ─────────────────────────────────────────────────────
+    if action == "back":
+        await page.go_back(wait_until="domcontentloaded", timeout=10000)
+        await _smart_wait(page)
+        snap = await _take_snapshot(page, cdp)
+        return f"Went back\n\n{snap}"
+
+    if action == "forward":
+        await page.go_forward(wait_until="domcontentloaded", timeout=10000)
+        await _smart_wait(page)
+        snap = await _take_snapshot(page, cdp)
+        return f"Went forward\n\n{snap}"
+
+    # ── TAB MANAGEMENT ─────────────────────────────────────────────────────
+    if action == "new_tab":
+        url = kw.get("url")
+        if not url:
+            return "Error: new_tab needs url=..."
+        ctx = BrowserSession._context
+        if not ctx:
+            return "Error: no browser context"
+        new_page = await ctx.new_page()
+        BrowserSession._page = new_page
+        BrowserSession._cdp = await ctx.new_cdp_session(new_page)
+        await BrowserSession._cdp.send("Accessibility.enable")
+        try:
+            await new_page.goto(url, wait_until="domcontentloaded", timeout=_NAV_TIMEOUT)
+            await _smart_wait(new_page)
+        except PlaywrightTimeout:
+            pass
+        snap = await _take_snapshot(new_page, BrowserSession._cdp)
+        return f"Opened new tab: {url}\n\n{snap}"
+
+    if action == "switch_tab":
+        ctx = BrowserSession._context
+        if not ctx:
+            return "Error: no browser context"
+        pages = ctx.pages
+        idx = kw.get("index", 0) or 0
+        if idx < 0 or idx >= len(pages):
+            return f"Error: tab index {idx} out of range (0–{len(pages)-1})"
+        BrowserSession._page = pages[idx]
+        BrowserSession._cdp = await ctx.new_cdp_session(pages[idx])
+        await BrowserSession._cdp.send("Accessibility.enable")
+        snap = await _take_snapshot(pages[idx], BrowserSession._cdp)
+        return f"Switched to tab [{idx}]\n\n{snap}"
+
+    if action == "close_tab":
+        ctx = BrowserSession._context
+        if not ctx:
+            return "Error: no browser context"
+        await page.close()
+        remaining = ctx.pages
+        if remaining:
+            BrowserSession._page = remaining[-1]
+            BrowserSession._cdp = await ctx.new_cdp_session(remaining[-1])
+            await BrowserSession._cdp.send("Accessibility.enable")
+            snap = await _take_snapshot(remaining[-1], BrowserSession._cdp)
+            return f"Tab closed\n\n{snap}"
+        return "Tab closed. No remaining tabs."
+
+    return f"Unknown action: '{action}'. Valid: navigate, snapshot, get_text, click, fill, type, press, hover, select_option, upload_file, scroll, wait, wait_for, screenshot, back, forward, new_tab, switch_tab, close_tab, close"

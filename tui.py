@@ -1,10 +1,21 @@
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Vertical, Horizontal
-from textual.widgets import Header, Footer, Input, Static, Label, Select, Button, TabbedContent, TabPane, Switch, RadioSet, RadioButton
+from textual.containers import Container, Vertical, Horizontal, ScrollableContainer
+from textual.widgets import (
+    Header, Footer, Input, Static, Label, Select, Button,
+    TabbedContent, TabPane, Switch, RadioSet, RadioButton,
+    RichLog, LoadingIndicator, Rule,
+)
 from textual.screen import ModalScreen
+from textual.binding import Binding
 from textual import work, on
+from textual.worker import Worker, WorkerState
+from rich.text import Text
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.console import Group
 from langchain_core.messages import HumanMessage
+import asyncio
 import json
 import os
 from brain.llm_factory import get_llm
@@ -13,17 +24,21 @@ from brain.memory_manager import SOUL_FILE
 from agent import app as agent_app, CONFIG_FILE, ENV_FILE, run_autonomous_heartbeat
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Chat Message Widget
+# ═══════════════════════════════════════════════════════════════════════════════
+
 class ChatMessage(Static):
-    """A widget to display a single chat message."""
+    """A single chat message — user or agent."""
+
     def __init__(self, text: str | list | dict, role: str, **kwargs):
         super().__init__(**kwargs)
         self.role = role
-        
+
         # Robust content extraction
         if isinstance(text, str):
             self.text = text
         elif isinstance(text, list):
-            # Join text parts if it's a list of parts
             parts = []
             for part in text:
                 if isinstance(part, dict) and "text" in part:
@@ -37,20 +52,20 @@ class ChatMessage(Static):
             self.text = str(text)
 
     def compose(self) -> ComposeResult:
-        # Icons: Safe Unicode
-        # User: ► (U+25BA)
-        # Agent: ◼ (U+25FC) or ◆ (U+25C6)
-        
         if self.role == "user":
-            prefix = "[bold cyan]► User:[/]" 
+            yield Static(f"[bold cyan]▸ You[/]\n{self.text}", classes="msg-content user-msg")
+        elif self.role == "system":
+            yield Static(f"[bold yellow]⚡ System[/]\n{self.text}", classes="msg-content system-msg")
         else:
-            prefix = "[bold green]◼ Agent:[/]"
-        
-        yield Label(prefix + " " + self.text, classes=f"message {self.role}")
+            yield Static(f"[bold green]◆ Agent[/]\n{self.text}", classes="msg-content agent-msg")
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Soul Sidebar
+# ═══════════════════════════════════════════════════════════════════════════════
 
 class SoulSidebar(Static):
-    """A widget to display the current Soul."""
+    """Displays the agent's current Soul."""
     def on_mount(self) -> None:
         self.update_soul()
         self.set_interval(2.0, self.update_soul)
@@ -63,6 +78,82 @@ class SoulSidebar(Static):
         except Exception:
             self.update("Error reading Soul file.")
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Thinking Indicator
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ThinkingIndicator(Static):
+    """Animated thinking indicator shown while agent is processing."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._frame = 0
+        self._frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def on_mount(self):
+        self.update_animation()
+        self._timer = self.set_interval(0.1, self.update_animation)
+
+    def update_animation(self):
+        spinner = self._frames[self._frame % len(self._frames)]
+        self.update(f"[bold magenta]{spinner} Thinking...[/]")
+        self._frame += 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Chat Input with History
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ChatInput(Input):
+    """Input field with prompt history support (Up/Down arrows)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._history: list[str] = []
+        self._history_index: int = -1
+        self._draft: str = ""
+
+    def add_to_history(self, text: str):
+        """Add a prompt to history (max 50)."""
+        if text and (not self._history or self._history[-1] != text):
+            self._history.append(text)
+            if len(self._history) > 50:
+                self._history.pop(0)
+        self._history_index = -1
+        self._draft = ""
+
+    def on_key(self, event):
+        if event.key == "up":
+            if not self._history:
+                return
+            if self._history_index == -1:
+                self._draft = self.value
+                self._history_index = len(self._history) - 1
+            elif self._history_index > 0:
+                self._history_index -= 1
+            self.value = self._history[self._history_index]
+            self.cursor_position = len(self.value)
+            event.prevent_default()
+            event.stop()
+        elif event.key == "down":
+            if self._history_index == -1:
+                return
+            if self._history_index < len(self._history) - 1:
+                self._history_index += 1
+                self.value = self._history[self._history_index]
+            else:
+                self._history_index = -1
+                self.value = self._draft
+            self.cursor_position = len(self.value)
+            event.prevent_default()
+            event.stop()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Config Screen (unchanged logic, refined style)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 class ConfigScreen(ModalScreen):
     """Modal screen for changing configuration mid-session."""
     CSS = """
@@ -70,22 +161,21 @@ class ConfigScreen(ModalScreen):
         align: center middle;
         background: $surface 50%;
     }
-    
+
     #dialog {
         width: 90%;
         max-width: 80;
         height: 90%;
         max-height: 45;
-        border: solid $accent;
+        border: tall $accent;
         padding: 1 2;
         background: $surface;
         overflow-y: auto;
     }
-    
+
     .config-title {
         text-align: center;
         margin-bottom: 2;
-        color: $text;
         text-style: bold;
         background: $primary;
         color: white;
@@ -93,7 +183,7 @@ class ConfigScreen(ModalScreen):
         width: 100%;
         border-bottom: solid $accent;
     }
-    
+
     .section-header {
         margin-top: 2;
         margin-bottom: 1;
@@ -107,7 +197,7 @@ class ConfigScreen(ModalScreen):
         margin-bottom: 1;
         height: auto;
     }
-    
+
     .help-text {
         color: $text-muted;
         text-style: italic;
@@ -120,21 +210,19 @@ class ConfigScreen(ModalScreen):
         height: 3;
     }
 
-    /* Input Styling */
     Input {
-        background: $panel; 
+        background: $panel;
         border: solid $accent;
         height: 3;
         min-height: 3;
         color: $text;
         width: 100%;
     }
-    
+
     Input:focus {
         border: double $primary;
     }
-    
-    /* RadioSet Styling */
+
     RadioSet {
         background: $panel;
         border: solid $secondary;
@@ -142,18 +230,17 @@ class ConfigScreen(ModalScreen):
         height: auto;
         margin-bottom: 1;
     }
-    
+
     RadioButton {
         width: 100%;
     }
     """
 
     def compose(self) -> ComposeResult:
-        # Load current config
         current_provider = "google"
         current_model = ""
         current_search_provider = "brave"
-        
+
         if os.path.exists(CONFIG_FILE):
              try:
                  with open(CONFIG_FILE, "r") as f:
@@ -164,44 +251,42 @@ class ConfigScreen(ModalScreen):
              except: pass
 
         with Container(id="dialog"):
-            yield Label("⚙️ Agent Configuration", classes="field-group config-title")
-            
-            # AI Section
-            yield Label("🧠 AI Brain", classes="section-header")
-            
+            yield Label("Agent Configuration", classes="field-group config-title")
+
+            yield Label("AI Brain", classes="section-header")
+
             with Vertical(classes="field-group"):
                 yield Label("Select AI Provider:")
                 with RadioSet(id="provider_radioset"):
                     yield RadioButton("Google Gemini", id="rb_google", value=(current_provider == "google"))
                     yield RadioButton("OpenAI", id="rb_openai", value=(current_provider == "openai"))
                     yield RadioButton("Anthropic", id="rb_anthropic", value=(current_provider == "anthropic"))
-            
+
             with Vertical(classes="field-group"):
                 yield Label("AI Provider API Key:")
                 yield Input(placeholder="(Hidden)", password=True, id="api_key_input")
                 yield Label("Leave empty to keep existing key.", classes="help-text")
-            
+
             with Vertical(classes="field-group"):
                 yield Label("Model Name:")
                 yield Input(value=current_model, placeholder="e.g. gemini-1.5-pro", id="model_input")
                 yield Label("Specific model identifier (optional).", classes="help-text")
-            
-            # Web Section
-            yield Label("🌐 Web Capabilities", classes="section-header")
-            
+
+            yield Label("Web Capabilities", classes="section-header")
+
             with Vertical(classes="field-group"):
                 yield Label("Search Provider:")
                 with RadioSet(id="search_provider_radioset"):
                     yield RadioButton("Brave Search (Recommended)", id="rb_brave", value=(current_search_provider == "brave"))
                     yield RadioButton("DuckDuckGo (Free/Slower)", id="rb_duckduckgo", value=(current_search_provider == "duckduckgo"))
-            
+
             with Vertical(classes="field-group"):
                 yield Label("Brave Search API Key:")
                 yield Input(placeholder="(Hidden)", password=True, id="brave_key_input")
                 yield Label("Required for Brave. Leave empty to keep existing.", classes="help-text")
 
             yield Static("", id="status_message")
-            
+
             with Horizontal(classes="field-group btn-group"):
                 yield Button("Save & Close", variant="primary", id="save_btn")
                 yield Button("Cancel", variant="error", id="cancel_btn")
@@ -214,11 +299,9 @@ class ConfigScreen(ModalScreen):
             self.save_config()
 
     def save_config(self):
-        # Get provider from RadioSet
         provider_rs = self.query_one("#provider_radioset", RadioSet)
-        provider = "google" # default
+        provider = "google"
         if provider_rs.pressed_button:
-            # Map ID to value
             pid = provider_rs.pressed_button.id
             if pid == "rb_google": provider = "google"
             elif pid == "rb_openai": provider = "openai"
@@ -227,18 +310,16 @@ class ConfigScreen(ModalScreen):
         api_key = self.query_one("#api_key_input").value
         model = self.query_one("#model_input").value
         brave_key = self.query_one("#brave_key_input").value
-        
-        # Get search provider from RadioSet
+
         search_rs = self.query_one("#search_provider_radioset", RadioSet)
-        search_provider = "brave" # default
+        search_provider = "brave"
         if search_rs.pressed_button:
              sid = search_rs.pressed_button.id
              if sid == "rb_brave": search_provider = "brave"
              elif sid == "rb_duckduckgo": search_provider = "duckduckgo"
 
-        # 1. Update Config File
         config_data = {
-            "provider": provider, 
+            "provider": provider,
             "model": model,
             "search_provider": search_provider
         }
@@ -249,7 +330,6 @@ class ConfigScreen(ModalScreen):
              self.query_one("#status_message").update(f"Error saving config: {e}")
              return
 
-        # 2. Update .env if key provided
         if api_key:
             env_var_map = {
                 "google": "GOOGLE_API_KEY",
@@ -257,21 +337,14 @@ class ConfigScreen(ModalScreen):
                 "anthropic": "ANTHROPIC_API_KEY"
             }
             env_var = env_var_map.get(provider)
-            
-            # Update .env file safely
             lines = []
             if os.path.exists(ENV_FILE):
                 with open(ENV_FILE, "r") as f: lines = f.readlines()
-            
             lines = [l for l in lines if not l.startswith(f"{env_var}=")]
             lines.append(f"{env_var}={api_key}\n")
-            
             with open(ENV_FILE, "w") as f: f.writelines(lines)
-            
-            # Update os.environ
             os.environ[env_var] = api_key
-            
-        # Update Brave Key if provided
+
         if brave_key:
              lines = []
              if os.path.exists(ENV_FILE):
@@ -284,6 +357,9 @@ class ConfigScreen(ModalScreen):
         self.dismiss(result=True)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Skills Screen (unchanged logic)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 class SkillsScreen(ModalScreen):
     """Modal screen for managing agent skills."""
@@ -292,22 +368,21 @@ class SkillsScreen(ModalScreen):
         align: center middle;
         background: $surface 50%;
     }
-    
+
     #skills-dialog {
         width: 85%;
         max-width: 80;
         height: 85%;
         max-height: 45;
-        border: solid $accent;
+        border: tall $accent;
         padding: 1 2;
         background: $surface;
         overflow-y: auto;
     }
-    
+
     .config-title {
         text-align: center;
         margin-bottom: 2;
-        color: $text;
         text-style: bold;
         background: $primary;
         color: white;
@@ -323,7 +398,7 @@ class SkillsScreen(ModalScreen):
         margin-bottom: 1;
         height: auto;
     }
-    
+
     .skill-row {
         height: auto;
         margin-bottom: 2;
@@ -331,20 +406,20 @@ class SkillsScreen(ModalScreen):
         padding: 1;
         background: $panel;
     }
-    
+
     .skill-header {
         height: 3;
         margin-bottom: 1;
         align: center middle;
     }
-    
+
     .skill-name {
         text-style: bold;
         color: $accent;
         width: 1fr;
         content-align: left middle;
     }
-    
+
     Switch {
         height: auto;
         dock: right;
@@ -354,13 +429,13 @@ class SkillsScreen(ModalScreen):
         margin-top: 1;
         color: $text;
     }
-    
+
     .api-key-input {
         margin-top: 0;
         border: solid $accent;
         background: $surface;
     }
-    
+
     .description {
         color: $text-muted;
         margin-bottom: 1;
@@ -368,7 +443,6 @@ class SkillsScreen(ModalScreen):
     """
 
     def compose(self) -> ComposeResult:
-        # Load current config to see enabled skills
         skills_config = {}
         if os.path.exists(CONFIG_FILE):
              try:
@@ -376,54 +450,41 @@ class SkillsScreen(ModalScreen):
                      data = json.load(f)
                      skills_config = data.get("skills", {})
              except: pass
-        
-        # OpenWeather Config
+
         openweather_cfg = skills_config.get("openweather", {})
         ow_enabled = openweather_cfg.get("enabled", False)
-        ow_api_key = openweather_cfg.get("api_key", "")
 
-        # Browser Config
         browser_cfg = skills_config.get("browser", {})
         browser_enabled = browser_cfg.get("enabled", False)
 
-        # Telegram Config
         telegram_cfg = skills_config.get("telegram", {})
         tg_enabled = telegram_cfg.get("enabled", False)
-        # We don't load secrets into UI for security & persistence
-        
+
         with Container(id="skills-dialog"):
-            yield Label("⚡ Agent Skills Manager", classes="config-title")
-            
-            # Browser Skill
+            yield Label("Agent Skills Manager", classes="config-title")
+
             with Vertical(classes="skill-row"):
                 with Horizontal(classes="skill-header"):
-                    yield Label("🌍 Headless Browser (Readable Browsing)", classes="skill-name")
+                    yield Label("Headless Browser (Autonomous Browsing)", classes="skill-name")
                     yield Switch(value=browser_enabled, id="browser_switch")
-                
-                yield Label("Allows the agent to read dynamic websites using Chromium.", classes="description")
+                yield Label("Allows the agent to browse the web autonomously using Chromium.", classes="description")
                 yield Label("Requires 'playwright install chromium' to be run once.", classes="help-text")
- 
-            # OpenWeather Skill
+
             with Vertical(classes="skill-row"):
                 with Horizontal(classes="skill-header"):
-                    yield Label("🌦️ OpenWeather", classes="skill-name")
+                    yield Label("OpenWeather", classes="skill-name")
                     yield Switch(value=ow_enabled, id="openweather_switch")
-                
                 yield Label("Provides real-time weather information for any city.", classes="description")
                 yield Label("API Key:", classes="api-key-label")
                 yield Input(value="", placeholder="(Hidden) - Enter new key to update", password=True, id="openweather_key", classes="api-key-input")
-            
-            # Telegram Bot Skill
+
             with Vertical(classes="skill-row"):
                 with Horizontal(classes="skill-header"):
-                    yield Label("🤖 Telegram Bot Gateway", classes="skill-name")
+                    yield Label("Telegram Bot Gateway", classes="skill-name")
                     yield Switch(value=tg_enabled, id="telegram_switch")
-                
                 yield Label("Chat with your agent remotely via Telegram.", classes="description")
-                
                 yield Label("Bot Token:", classes="api-key-label")
                 yield Input(value="", placeholder="(Hidden) - Enter new token to update", password=True, id="telegram_token", classes="api-key-input")
-                
                 yield Label("Allowed User ID:", classes="api-key-label")
                 yield Input(value="", placeholder="(Hidden) - Enter new ID to update", id="telegram_user_id", classes="api-key-input")
                 yield Label("Required for security. Get yours from @userinfobot.", classes="help-text")
@@ -440,42 +501,33 @@ class SkillsScreen(ModalScreen):
             self.save_skills()
 
     def save_skills(self):
-        # OpenWeather Values
         ow_enabled = self.query_one("#openweather_switch").value
         ow_key = self.query_one("#openweather_key").value
-        
-        # Browser Values
         browser_enabled = self.query_one("#browser_switch").value
-
-        # Telegram Values
         tg_enabled = self.query_one("#telegram_switch").value
         tg_token = self.query_one("#telegram_token").value
         tg_user_id = self.query_one("#telegram_user_id").value
 
-        # Load existing config
         config_data = {}
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     config_data = json.load(f)
             except: pass
-            
+
         if "skills" not in config_data:
             config_data["skills"] = {}
-            
-        # Update OpenWeather (Merge)
+
         ow_data = config_data["skills"].get("openweather", {})
         ow_data["enabled"] = ow_enabled
-        if ow_key: # Only update if user provided a new key
+        if ow_key:
              ow_data["api_key"] = ow_key
         config_data["skills"]["openweather"] = ow_data
 
-        # Update Browser (Merge)
         browser_data = config_data["skills"].get("browser", {})
         browser_data["enabled"] = browser_enabled
         config_data["skills"]["browser"] = browser_data
 
-        # Update Telegram (Merge)
         tg_data = config_data["skills"].get("telegram", {})
         tg_data["enabled"] = tg_enabled
         if tg_token:
@@ -483,7 +535,7 @@ class SkillsScreen(ModalScreen):
         if tg_user_id:
              tg_data["allowed_user_id"] = tg_user_id
         config_data["skills"]["telegram"] = tg_data
-        
+
         try:
              with open(CONFIG_FILE, "w") as f:
                  json.dump(config_data, f, indent=4)
@@ -491,12 +543,13 @@ class SkillsScreen(ModalScreen):
              self.notify(f"Error saving skills: {e}", severity="error")
              return
 
-             self.notify(f"Error saving skills: {e}", severity="error")
-             return
-
         self.dismiss(result=True)
-        self.notify("Skills saved. Please restart the agent for changes to take effect.", severity="warning", timeout=5)
+        self.notify("Skills saved. Restart agent for changes to take effect.", severity="warning", timeout=5)
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Tasks Screen (unchanged logic)
+# ═══════════════════════════════════════════════════════════════════════════════
 
 class TasksScreen(ModalScreen):
     """Modal screen for managing automated tasks."""
@@ -505,18 +558,18 @@ class TasksScreen(ModalScreen):
         align: center middle;
         background: $surface 50%;
     }
-    
+
     #tasks-dialog {
         width: 90%;
         max-width: 90;
         height: 90%;
         max-height: 50;
-        border: solid $accent;
+        border: tall $accent;
         padding: 1 2;
         background: $surface;
         layout: vertical;
     }
-    
+
     #tasks-list {
         height: 1fr;
         width: 100%;
@@ -526,11 +579,10 @@ class TasksScreen(ModalScreen):
         background: $panel;
         margin-bottom: 1;
     }
-    
+
     .config-title {
         text-align: center;
         margin-bottom: 2;
-        color: $text;
         text-style: bold;
         background: $primary;
         color: white;
@@ -539,7 +591,7 @@ class TasksScreen(ModalScreen):
         border-bottom: solid $accent;
         dock: top;
     }
-    
+
     .task-row {
         height: auto;
         margin-bottom: 1;
@@ -548,34 +600,34 @@ class TasksScreen(ModalScreen):
         background: $panel;
         layout: horizontal;
     }
-    
+
     .task-info {
         width: 1fr;
         height: auto;
         layout: vertical;
     }
-    
+
     .task-time {
         color: yellow;
         text-style: bold;
     }
-    
+
     .task-desc {
         color: white;
     }
-    
+
     .task-recur {
         color: cyan;
         text-style: italic;
     }
-    
+
     .delete-btn {
         dock: right;
         min-width: 10;
         height: 3;
         margin-left: 1;
     }
-    
+
     .empty-msg {
         text-align: center;
         margin-top: 4;
@@ -589,16 +641,11 @@ class TasksScreen(ModalScreen):
     }
     """
 
-    
     def compose(self) -> ComposeResult:
         with Container(id="tasks-dialog"):
-            yield Label("📅 Automated Tasks Manager", classes="config-title")
-            
-            # The scrollable list
+            yield Label("Automated Tasks Manager", classes="config-title")
             with Vertical(id="tasks-list"):
-                pass # Will be populated by refresh_tasks
-            
-            # Footer buttons
+                pass
             with Horizontal(classes="field-group btn-group"):
                 yield Button("Close", variant="primary", id="close_tasks_btn")
 
@@ -610,8 +657,7 @@ class TasksScreen(ModalScreen):
         self.refresh_count += 1
         tasks_list = self.query_one("#tasks-list")
         tasks_list.remove_children()
-        
-        # Load tasks safely
+
         tasks = []
         try:
             from brain.memory_manager import SCHEDULE_FILE, read_file_safe
@@ -620,49 +666,34 @@ class TasksScreen(ModalScreen):
         except Exception as e:
             tasks_list.mount(Label(f"Error loading tasks: {e}", classes="empty-msg"))
             return
-        
+
         if not tasks:
             tasks_list.mount(Label("No scheduled tasks found.", classes="empty-msg"))
         else:
             for idx, task in enumerate(tasks):
-                # Use refresh_count to ensure unique IDs across refreshes
                 unique_sid = f"{idx}_{self.refresh_count}"
-                
-                # Prepare children for Info Container
                 info_children = [
-                    Label(f"⏰ {task.get('time', 'Unknown')}", classes="task-time"),
-                    Label(f"📝 {task.get('task', '')}", classes="task-desc")
+                    Label(f"  {task.get('time', 'Unknown')}", classes="task-time"),
+                    Label(f"  {task.get('task', '')}", classes="task-desc")
                 ]
                 if "recurrence" in task:
-                    info_children.append(Label(f"🔄 Repeats: {task['recurrence']}", classes="task-recur"))
-                
-                # Create Info Container with children
+                    info_children.append(Label(f"  Repeats: {task['recurrence']}", classes="task-recur"))
                 info = Container(*info_children, classes="task-info")
-                
-                # Delete button
                 delete_btn = Button("Delete", variant="error", id=f"delete-{unique_sid}", classes="delete-btn")
-                
-                # Create Row Container with children
                 row = Container(info, delete_btn, classes="task-row", id=f"row-{unique_sid}")
-                
-                # Mount the fully constructed row to the list (which is already mounted)
                 tasks_list.mount(row)
 
     @on(Button.Pressed)
     def handle_buttons(self, event: Button.Pressed):
         btn_id = event.button.id
-        
         if btn_id == "close_tasks_btn":
             self.dismiss()
             return
-            
         if btn_id and btn_id.startswith("delete-"):
             try:
-                # Format: delete-IDX_REFRESHCOUNT
                 parts = btn_id.split("-")
-                unique_id = parts[1] # "IDX_REFRESHCOUNT"
+                unique_id = parts[1]
                 idx = int(unique_id.split("_")[0])
-                
                 self.delete_task(idx)
             except Exception as e:
                 self.notify(f"Error deleting task: {e}", severity="error")
@@ -672,166 +703,279 @@ class TasksScreen(ModalScreen):
         try:
             content = read_file_safe(SCHEDULE_FILE, "[]")
             tasks = json.loads(content)
-            
             if 0 <= idx < len(tasks):
-                removed = tasks.pop(idx)
-                
+                tasks.pop(idx)
                 with open(SCHEDULE_FILE, "w") as f:
                     json.dump(tasks, f, indent=4)
-                
-                self.notify(f"Deleted task.")
-                # Refresh UI fully to reset indices and IDs
-                # This ensures we don't have ID collisions or stale indices
+                self.notify("Deleted task.")
                 self.refresh_tasks()
             else:
-                self.notify("Task index out of range. Refreshing...", severity="error")
+                self.notify("Task index out of range.", severity="error")
                 self.refresh_tasks()
-                
         except Exception as e:
              self.notify(f"Delete failed: {e}", severity="error")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Main Application — AgentInterface
+# ═══════════════════════════════════════════════════════════════════════════════
+
 class AgentInterface(App):
-    """The main TUI App."""
+    """Space Black Terminal — Premium Agent Interface."""
+
+    TITLE = "Space Black"
+
+    BINDINGS = [
+        Binding("ctrl+l", "clear_chat", "Clear Chat", show=True),
+        Binding("ctrl+r", "restart_session", "Restart", show=True),
+        Binding("ctrl+s", "stop_agent", "Stop Agent", show=True),
+        Binding("escape", "dismiss_modal", "Dismiss", show=False),
+    ]
+
     CSS = """
+    /* ── Layout ─────────────────────────────────────────────────── */
     #main-container {
-        height: 100%;
+        height: 1fr;
         width: 100%;
     }
-    
+
     #sidebar {
-        width: 30%;
+        width: 28;
         height: 100%;
-        border-right: solid green;
+        border-right: tall $accent 40%;
         padding: 1;
         background: $surface;
     }
 
     #chat-container {
-        width: 70%;
+        width: 1fr;
         height: 100%;
         layout: vertical;
     }
 
+    /* ── Chat Area ──────────────────────────────────────────────── */
     #chat-history {
         height: 1fr;
-        border: solid blue;
         overflow-y: auto;
-        padding: 1;
+        padding: 1 2;
+        background: $background;
     }
 
-    #chat_input {
-        dock: bottom;
-        margin: 1;
-    }
-
-    .message {
-        padding: 1;
-        margin-bottom: 1;
-        width: 100%;
-        height: auto;
-    }
-    
+    /* ── Messages ───────────────────────────────────────────────── */
     ChatMessage {
         height: auto;
         width: 100%;
+        margin-bottom: 1;
     }
-    
-    .user { color: cyan; }
-    .agent { color: green; }
-    .system-alert { color: red; text-style: bold; }
+
+    .msg-content {
+        height: auto;
+        width: 100%;
+        padding: 1 2;
+    }
+
+    .user-msg {
+        background: #1a3a4a;
+        border-left: tall cyan;
+        color: white;
+    }
+
+    .agent-msg {
+        background: #1a3a2a;
+        border-left: tall green;
+        color: white;
+    }
+
+    .system-msg {
+        background: #3a3a1a;
+        border-left: tall yellow;
+        color: white;
+    }
+
+    /* ── Thinking Indicator ─────────────────────────────────────── */
+    ThinkingIndicator {
+        height: auto;
+        width: 100%;
+        padding: 1 2;
+        background: #2a1a3a;
+        border-left: tall magenta;
+        margin-bottom: 1;
+    }
+
+    /* ── Toolbar ─────────────────────────────────────────────────── */
+    #toolbar {
+        height: 3;
+        dock: bottom;
+        padding: 0 1;
+        background: $surface;
+        border-top: solid $primary 40%;
+    }
+
+    #toolbar Button {
+        min-width: 12;
+        margin-right: 1;
+    }
+
+    .toolbar-spacer {
+        width: 1fr;
+    }
+
+    #status-label {
+        width: auto;
+        content-align: right middle;
+        color: $text-muted;
+        padding-right: 1;
+    }
+
+    /* ── Input ───────────────────────────────────────────────────── */
+    #input-area {
+        height: auto;
+        dock: bottom;
+        padding: 0 1;
+        background: $surface;
+    }
+
+    #chat_input {
+        width: 100%;
+        border: tall $accent 60%;
+        background: $panel;
+        height: 3;
+    }
+
+    #chat_input:focus {
+        border: tall $primary;
+    }
+
+    /* ── Banner ──────────────────────────────────────────────────── */
+    .banner {
+        color: $primary;
+        text-style: bold;
+        padding: 1 2;
+        text-align: center;
+    }
+
+    .welcome-msg {
+        color: $text-muted;
+        padding: 0 2 1 2;
+        text-align: center;
+    }
+
+    /* ── System Alerts ──────────────────────────────────────────── */
+    .system-alert {
+        color: red;
+        text-style: bold;
+        padding: 1;
+    }
+
+    /* ── Stop Button ────────────────────────────────────────────── */
+    #stop-btn {
+        display: none;
+    }
+
+    #stop-btn.visible {
+        display: block;
+    }
     """
 
     def compose(self) -> ComposeResult:
         yield Header()
-        
-        # Main Body
+
         with Horizontal(id="main-container"):
-            # Sidebar for Soul
+            # Sidebar
             with Container(id="sidebar"):
                 yield SoulSidebar()
 
-            # Main Chat Area
+            # Main chat area
             with Container(id="chat-container"):
-                with Vertical(id="chat-history"):
+                with ScrollableContainer(id="chat-history"):
                     banner = """
-   ____                         ____  _            _      
-  / ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __ 
-  \___ \| '_ \ / _` |/ __/ _ \ |  _ \| |/ _` |/ __| |/ / 
-   ___) | |_) | (_| | (_|  __/ | |_) | | (_| | (__|   <  
-  |____/| .__/ \__,_|\___\___| |____/|_|\__,_|\___|_|\_\\
-        |_|                                              
-"""
-                    yield Static(f"[bold green]{banner}[/]", classes="message")
-                    yield Static("System: Ghost initialised. Type /config, /skills, or /tasks. 'exit' to quit.", classes="agent")
-                yield Input(placeholder="Type your command or message here...", id="chat_input")
-        
+ ____                         ____  _            _
+/ ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __
+\\___ \\| '_ \\ / _` |/ __/ _ \\ |  _ \\| |/ _` |/ __| |/ /
+ ___) | |_) | (_| | (_|  __/ | |_) | | (_| | (__|   <
+|____/| .__/ \\__,_|\\___\\___| |____/|_|\\__,_|\\___|_|\\_\\
+      |_|"""
+                    yield Static(f"[bold cyan]{banner}[/]", classes="banner")
+                    yield Static(
+                        "Type a message to chat  |  /config  /skills  /tasks  |  Ctrl+S stop  Ctrl+R restart  Ctrl+L clear  |  Up/Down for prompt history",
+                        classes="welcome-msg",
+                    )
+
+                # Toolbar with controls
+                with Horizontal(id="toolbar"):
+                    yield Button("Stop", variant="error", id="stop-btn")
+                    yield Button("Clear", variant="default", id="clear-btn")
+                    yield Button("Restart", variant="warning", id="restart-btn")
+                    yield Static("", classes="toolbar-spacer")
+                    yield Label("Ready", id="status-label")
+
+                # Input
+                with Container(id="input-area"):
+                    yield ChatInput(placeholder="Type your message... (Up/Down for history)", id="chat_input")
+
         yield Footer()
 
     def on_mount(self):
-        self.update_footer_model()
-        # Schedule heartbeat every 60 seconds (1 minute) for task scheduler
+        self.messages: list = []
+        self._agent_worker: Worker | None = None
+        self._thinking_widget: ThinkingIndicator | None = None
+        self._msg_count = 0
+        self.update_status_bar()
         self.set_interval(60, self.scheduled_heartbeat)
-        
-        # Run once on startup (optional, maybe check if missed)
         self.scheduled_heartbeat()
 
-    def update_footer_model(self):
-        # Read config to get current model
+    # ── Status Bar ─────────────────────────────────────────────────────────
+
+    def update_status_bar(self):
+        """Update the status label with model info and message count."""
         provider = "Unknown"
         model = "Unknown"
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     data = json.load(f)
-                    provider = data.get("provider", "Unknown").capitalize()
-                    model = data.get("model", "Unknown")
+                    provider = data.get("provider", "?").capitalize()
+                    model = data.get("model", "?")
             except: pass
-        self.sub_title = f"Connected to: {provider} ({model})"
 
+        label = self.query_one("#status-label", Label)
+        label.update(f"{provider}/{model} | {self._msg_count} msgs")
+        self.sub_title = f"{provider} ({model})"
+
+    # ── Heartbeat ──────────────────────────────────────────────────────────
 
     @work(exclusive=True, thread=True)
     def scheduled_heartbeat(self):
-        # Run the autonomous check
-        # Since it calls LLM sync, we wrap or use thread. 
-        # But get_llm invocation is sync in run_autonomous_heartbeat.
-        # @work runs in a worker thread, so blocking is okay-ish, but let's be safe.
         try:
-             # We can't await a sync function directly, but @work handles it if we don't await?
-             # Actually @work makes the decorated function async-like in TUI loop but runs in thread?
-             # Textual: "Workers are useful for running long running tasks... avoiding blocking the UI"
-             # So we can just call it.
-             
-             # Note: run_autonomous_heartbeat checks timestamp, so safe to call often.
              result = run_autonomous_heartbeat()
-             
              if result:
-                 # 1. Show visual alert
                  self.call_from_thread(self.display_system_alert, result)
-                 # 2. Trigger Agent Response automatically
                  self.process_agent_response(f"SYSTEM ALERT: {result}")
-                 
-        except Exception as e:
-            # Silently fail or log?
+        except Exception:
             pass
 
     def display_system_alert(self, text: str):
          chat_history = self.query_one("#chat-history")
-         chat_history.mount(Label(f"💓 System Alert: {text}", classes="message system-alert"))
+         chat_history.mount(ChatMessage(text, "system"))
          chat_history.scroll_end()
 
+    # ── Input Handling ─────────────────────────────────────────────────────
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        # ... (Rest of input handling same as before) ...
-        user_input = event.value
+        user_input = event.value.strip()
         event.input.value = ""
-        
+
         if not user_input:
             return
+
+        # Add to prompt history
+        chat_input = self.query_one("#chat_input", ChatInput)
+        chat_input.add_to_history(user_input)
 
         if user_input.lower() in ["exit", "quit"]:
             self.exit()
             return
-            
+
         if user_input.lower() == "/config":
             self.push_screen(ConfigScreen(), self.on_config_closed)
             return
@@ -844,47 +988,155 @@ class AgentInterface(App):
             self.push_screen(TasksScreen(), self.on_config_closed)
             return
 
+        # Display user message
         chat_history = self.query_one("#chat-history")
         chat_history.mount(ChatMessage(user_input, "user"))
-        
+        chat_history.scroll_end()
+        self._msg_count += 1
+        self.update_status_bar()
+
+        # Start agent processing
         self.process_agent_response(user_input)
 
     def on_config_closed(self, result):
         if result:
-            self.update_footer_model()
+            self.update_status_bar()
             chat_history = self.query_one("#chat-history")
-            chat_history.mount(Static("System: Configuration updated.", classes="agent"))
+            chat_history.mount(ChatMessage("Configuration updated.", "system"))
+            chat_history.scroll_end()
+
+    # ── Agent Processing ───────────────────────────────────────────────────
 
     @work(exclusive=True)
     async def process_agent_response(self, user_input: str) -> None:
-        if not hasattr(self, "messages"): self.messages = []
         self.messages.append(HumanMessage(content=user_input))
-        
         inputs = {"messages": self.messages}
-        
+
         # Show thinking indicator
-        chat_history = self.query_one("#chat-history")
-        loading_indicator = Label("... thinking ...", classes="message agent")
-        chat_history.mount(loading_indicator)
-        chat_history.scroll_end()
-        
+        self._show_thinking()
+
         try:
             result = await agent_app.ainvoke(inputs)
-            loading_indicator.remove() # Remove indicator
-            
+
+            # Remove thinking
+            self._hide_thinking()
+
             latest_msg = result["messages"][-1]
             response_text = latest_msg.content
-            
-            self.messages = result["messages"]
-            self.display_agent_message(response_text)
-            
-        except Exception as e:
-            self.display_agent_message(f"Error: {str(e)}")
 
-    def display_agent_message(self, text: str) -> None:
+            self.messages = result["messages"]
+            self._msg_count += 1
+            self.update_status_bar()
+            self._display_agent_message(response_text)
+
+        except asyncio.CancelledError:
+            self._hide_thinking()
+            self._display_system_message("Agent stopped by user.")
+        except Exception as e:
+            self._hide_thinking()
+            self._display_agent_message(f"Error: {str(e)}")
+
+    def _show_thinking(self):
+        """Show animated thinking indicator and stop button."""
+        chat_history = self.query_one("#chat-history")
+        self._thinking_widget = ThinkingIndicator()
+        chat_history.mount(self._thinking_widget)
+        chat_history.scroll_end()
+
+        # Show stop button
+        stop_btn = self.query_one("#stop-btn")
+        stop_btn.add_class("visible")
+
+        # Update status
+        label = self.query_one("#status-label", Label)
+        label.update("Processing...")
+
+    def _hide_thinking(self):
+        """Remove thinking indicator and hide stop button."""
+        if self._thinking_widget:
+            try:
+                self._thinking_widget.remove()
+            except Exception:
+                pass
+            self._thinking_widget = None
+
+        # Hide stop button
+        try:
+            stop_btn = self.query_one("#stop-btn")
+            stop_btn.remove_class("visible")
+        except Exception:
+            pass
+
+        self.update_status_bar()
+
+    def _display_agent_message(self, text: str) -> None:
         chat_history = self.query_one("#chat-history")
         chat_history.mount(ChatMessage(text, "agent"))
         chat_history.scroll_end()
+
+    def _display_system_message(self, text: str) -> None:
+        chat_history = self.query_one("#chat-history")
+        chat_history.mount(ChatMessage(text, "system"))
+        chat_history.scroll_end()
+
+    # ── Actions (bound to keys + buttons) ──────────────────────────────────
+
+    def action_stop_agent(self) -> None:
+        """Stop the currently running agent response."""
+        workers = self.workers
+        for worker in workers:
+            if worker.name == "process_agent_response" and worker.state == WorkerState.RUNNING:
+                worker.cancel()
+                self._hide_thinking()
+                self._display_system_message("Agent stopped.")
+                return
+        self.notify("No active agent response to stop.", severity="warning")
+
+    def action_clear_chat(self) -> None:
+        """Clear the chat display (keep conversation memory)."""
+        chat_history = self.query_one("#chat-history")
+        chat_history.remove_children()
+        chat_history.mount(Static("[bold cyan]Chat cleared.[/]", classes="welcome-msg"))
+        self.notify("Chat display cleared.", severity="information")
+
+    def action_restart_session(self) -> None:
+        """Restart the agent session — clears all conversation memory."""
+        # Stop any running worker
+        self.action_stop_agent()
+
+        # Reset state
+        self.messages = []
+        self._msg_count = 0
+
+        # Clear and reset UI
+        chat_history = self.query_one("#chat-history")
+        chat_history.remove_children()
+        chat_history.mount(Static("[bold green]Session restarted.[/] Conversation memory cleared.", classes="welcome-msg"))
+        chat_history.scroll_end()
+
+        self.update_status_bar()
+        self.notify("Session restarted.", severity="information")
+
+    def action_dismiss_modal(self) -> None:
+        """Dismiss the top modal screen."""
+        if self.screen_stack:
+            try:
+                self.pop_screen()
+            except Exception:
+                pass
+
+    # ── Button Handler ─────────────────────────────────────────────────────
+
+    @on(Button.Pressed)
+    def handle_toolbar_buttons(self, event: Button.Pressed):
+        btn_id = event.button.id
+        if btn_id == "stop-btn":
+            self.action_stop_agent()
+        elif btn_id == "clear-btn":
+            self.action_clear_chat()
+        elif btn_id == "restart-btn":
+            self.action_restart_session()
+
 
 if __name__ == "__main__":
     app = AgentInterface()
