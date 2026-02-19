@@ -1,14 +1,16 @@
 # Space Black User Manual
 
-## Running the Agent
+## Running Ghost
+To wake up **Ghost** (the agent), you run the **Space Black** executable.
 
 ### Interactive Mode (TUI)
 Run this for your daily dev work.
 ```bash
 ./spaceblack start
 ```
-- **Interface**: Full terminal UI with chat, task list, and memory viewer.
+- **Interface**: Full terminal UI where you chat with Ghost.
 - **Controls**: Mouse supported. `Ctrl+C` to exit.
+- **Ghost's Role**: Pair programmer, researcher, and assistant.
 
 ### Headless Mode (Daemon)
 Run this on servers or for background monitoring.
@@ -16,38 +18,39 @@ Run this on servers or for background monitoring.
 ./spaceblack daemon
 ```
 - **Interface**: None (Silent).
-- **Function**: Runs every 60s to check `SCHEDULE.json` and `HEARTBEAT.md`.
-- **Interaction**: Use Telegram to talk to the daemon.
+- **Ghost's Role**: Background worker. Checks `SCHEDULE.json` every 60s.
+- **Interaction**: Use Telegram to talk to Ghost while it runs in the background.
 
 ---
 
-## Core Features
+## Core Capabilities
 
-### 1. Task Scheduling
-Tell the agent to do things in the future.
-- "Remind me to check server logs in 20 minutes"
-- "Every morning at 9am, check the weather"
+### 1. Interacting with Ghost
+Ghost is designed to be conversational but precise.
+- "Help me debug this error in `main.py`."
+- "What do you think about the project structure?"
+- "Draft a new README based on the code."
 
-**Manage Tasks:**
-- Type `/tasks` in the TUI to see and delete scheduled jobs.
+### 2. Autonomous Web Browsing
+Ghost can surf the web for you.
+- "Go to github.com and check the trending repos."
+- "Read the documentation for LangGraph and summarize the core concepts."
+See [**Browsing Guide**](docs/BROWSING.md) for details.
 
-### 2. File Operations
-The agent can safely read/write files in your project.
-- "Create a new file called test.py"
-- "Read README.md and summarize it"
-- "List files in the current directory"
+### 3. Task Scheduling
+Tell Ghost to do things in the future.
+- "Remind me to check server logs in 20 minutes."
+- "Every morning at 9am, check the weather."
+- **Manage Tasks:** Type `/tasks` to see pending jobs.
 
-### 3. Memory System
+### 4. Memory System
+Ghost has a persistent memory.
 - **Short-term**: Remembers the current conversation.
 - **Long-term**: Stores facts in `brain/MEMORY.md`.
-- **User Profile**: Stores your preferences in `brain/USER.md`.
-
-### 4. Web Search
-- "Search for the latest React release notes"
-- Uses Brave Search or DuckDuckGo (configurable).
+- **User Profile**: Learns your preferences in `brain/USER.md`.
 
 ---
 
 ## Keyboard Shortcuts (TUI)
-- **Enter**: Send message
-- **Ctrl+C**: Quit application
+- **Enter**: Send message to Ghost.
+- **Ctrl+C**: Quit Space Black.

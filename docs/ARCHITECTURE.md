@@ -1,51 +1,56 @@
 # Architecture Reference
 
+## Concept: Infrastructure vs. Agent
+**Space Black** is the host infrastructure (Body). **Ghost** is the autonomous agent (Mind).
+
 ## Core Components
 
 ### 1. The Brain (`brain/`)
-The agent's state is strictly file-based.
-- **`SOUL.md`**: System Prompt (Personality).
+Ghost's state is strictly file-based.
+- **`SOUL.md`**: System Prompt (Ghost's Personality & Instructions).
 - **`MEMORY.md`**: Long-term semantic memory.
-- **`SCHEDULE.json`**: Pending cron jobs and reminders.
-- **`HEARTBEAT.md`**: Instructions for the background loop.
+- **`USER.md`**: Profile of you (the user).
+- **`SCHEDULE.json`**: Pending tasks.
+- **`HEARTBEAT.md`**: Background loop instructions.
+- **`vault/`**: Secure storage for browser sessions and secrets.
 
-### 2. The Agent (`agent.py`)
+### 2. The Agent Logic (`agent.py`)
+This is the "Ghost" implementation.
 - Built with **LangGraph**.
 - Uses a **ReAct** loop (Reason → Act → Observe).
-- Supports dynamic tool loading based on `config.json`.
+- Dynamically loads tools from `tools/` based on `config.json`.
 
-### 3. The Interfaces
+### 3. The Interfaces (Space Black)
 a. **TUI (`tui.py`)**:
-   - Built with **Textual**.
-   - Asynchronous UI loop.
-   - Direct connection to `agent.py`.
+   - The visual terminal interface.
+   - Connects user input to `agent.py`.
 
 b. **Daemon (`daemon.py`)**:
-   - Headless process.
-   - Runs `run_autonomous_heartbeat()` loop.
-   - Monitors `SCHEDULE.json` for due tasks.
+   - Headless runner.
+   - Executes the `run_autonomous_heartbeat()` loop.
    - Listens for remote events (Telegram).
 
 ### 4. Tool System (`tools/`)
-- **Native Tools**: File I/O, System info (built-in).
-- **Skills**: Modular integrations (Weather, Browser, Telegram).
-- **Design**: Tools are simple Python functions decorated with `@tool`.
+The capabilities Space Black provides to Ghost.
+- **Native Tools**: File I/O, System info.
+- **Skills**: Modular integrations (Weather, Telegram).
+- **Browser Engine**: The autonomous browsing capability.
 
-### 5. Autonomous Browser Engine (OpenClaw-Style)
-This agent runs a persistent browser session (`interactive_browser.py`) that mirrors the OpenClaw architecture:
-- **Vision**: Uses **Chrome DevTools Protocol (CDP)** to fetch the Accessibility Tree (AXTree), bypassing simple HTML parsers.
-- **Action**: Uses Playwright for high-fidelity interaction (Click, Type, Select).
-- **Think-Act-Loop**: Managed by **LangGraph**, allowing the agent to reason about the page state before multiple actions.
-- **Stealth**: Masks automation flags and blocks ads/trackers for speed and evasion.
-- **Persistence**: Maintains session state (cookies, local storage) in `brain/vault/`.
+### 5. Autonomous Browser Engine
+Space Black provides a persistent browser environment for Ghost.
+- **Vision**: **Chrome DevTools Protocol (CDP)** fetches the Accessibility Tree.
+- **Action**: **Playwright** handles interactions.
+- **Persistence**: Session state (cookies, local storage) saved in `brain/vault/`.
+See [**BROWSING.md**](docs/BROWSING.md) for details.
 
 ---
 
 ## Data Flow
 
-1. **User Input** (TUI or Telegram) → **Agent Graph**
-2. **Agent** reads `brain/` files for context.
-3. **Agent** decides to call a Tool or reply.
-4. **Tool** executes (Web Search, File Write, etc.).
-5. **Agent** generates final response.
-6. **Output** sent back to User Interface.
+1. **User Input** (TUI or Telegram) → **Space Black**
+2. **Space Black** passes input to **Ghost (Agent Graph)**
+3. **Ghost** reads `brain/` files for context.
+4. **Ghost** decides to use a Tool (e.g., Browser).
+5. **Tool** executes via **Space Black Infrastructure**.
+6. **Ghost** observes result and generates response.
+7. **Response** sent back to User via TUI.

@@ -295,18 +295,43 @@ def run_agent(state: AgentState):
 
     response = llm_with_tools.invoke(messages)
     
-    # GUARD: If response is effectively empty (no content, no tool calls)
-    # This happens sometimes with Gemini or if the model "chokes"
-    if not response.content and not response.tool_calls:
-        response.content = "..."
-        
-    # GUARD: If response has tool calls but no content, ensure content is partially filled
-    # to prevent TUI from showing blank (though TUI usually waits for final result)
-    # But if this is the FINAL result (e.g. tool execution failed?), we need text.
-    if not response.content and response.tool_calls:
-        # We can leave it empty if we are fairly sure it proceeds to tool execution.
-        # But for safety:
-        response.content = " " # Space is enough to be not None
+    # ── GUARD: Empty response after tool use ──────────────────────────────────
+    # This happens when snapshot content is large (emails, Amazon results) — the 
+    # model uses its full context processing tool results and produces no text.
+    # Fix: force a summarization pass so the user always gets a real answer.
+    content_str = response.content if isinstance(response.content, str) else ""
+    has_content  = bool(content_str.strip())
+    has_tools    = bool(response.tool_calls)
+
+    if not has_content and not has_tools:
+        # The model «choked» — force a summary of what just happened
+        # Append the empty response and ask the LLM to summarize plainly
+        summary_messages = list(messages) + [response]
+        summary_prompt = HumanMessage(content=(
+            "[SYSTEM] Your last response was empty. "
+            "Based on all the tool results above, write a clear, concise summary for the user. "
+            "Report what you found, read, or did. Be specific — show actual content (email subjects, "
+            "prices, facts). Do NOT use tool calls in this response. Just write plain text."
+        ))
+        summary_messages.append(summary_prompt)
+        try:
+            # Use a plain LLM (no tools) to force a text-only response
+            plain_llm = get_llm(config["provider"], config["model"], temperature=0)
+            summary_response = plain_llm.invoke(summary_messages)
+            # Use the summary as the actual response
+            summary_text = summary_response.content
+            if isinstance(summary_text, list):
+                summary_text = " ".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in summary_text)
+            if summary_text and summary_text.strip():
+                response.content = summary_text.strip()
+            else:
+                response.content = "(Task completed — no summary generated.)"
+        except Exception as e:
+            response.content = f"(Task completed. Summary error: {e})"
+
+    elif not has_content and has_tools:
+        # Mid-chain: tool calls pending, ensure a non-None content so SDK is happy
+        response.content = " "
         
     return {"messages": [response]}
 

@@ -1,41 +1,80 @@
-# Space Black (Ghost Agent)
+# Space Black (Infrastructure) & Ghost (Agent)
 
-**Space Black** is a self-evolving, terminal-based AI agent designed to live in your shell. It allows you to interact with LLMs (Gemini, OpenAI, Anthropic) directly from your terminal with persistent memory, autonomous scheduling, and web access.
+> **"Space Black is the ship. Ghost is the pilot."**
+
+**Space Black** is a terminal-based AI infrastructure designed to host autonomous agents. It provides the **body** (CLI, file system access, browser engine, memory system) that an AI agent needs to live and work on your local machine.
+
+**Ghost** is the default AI agent running on Space Black. It is a self-evolving, persistent personality that acts as your pair programmer, researcher, and assistant.
 
 ![Terminal UI](https://textual.textualize.io/assets/images/gallery/code_browser.png)
 
-## Features
+## What is Space Black?
 
--   **Persistent Memory**: Remembers your preferences, identity, and past contexts in `brain/USER.md` and `brain/memory/`.
--   **Personality Engine**: Developing a unique persona stored in `brain/SOUL.md` that evolves over time based on interactions.
--   **Task Scheduler**: Schedule commands and reminders. The agent executes them automatically in the background.
--   **Web Access**: Real-time internet search using Brave Search or DuckDuckGo to fetch current events.
--   **Headless Browser**: Can read dynamic websites (React/Vue/Angular) using a built-in Chromium engine.
--   **Terminal UI (TUI)**: Built with Textual for a responsive CLI experience.
--   **Modular Skills**: Extensible system for integrations like OpenWeather and Telegram. (Requires restart to enable/disable)
--   **Multi-Provider**: Switch between Google Gemini, OpenAI, and Anthropic models dynamically.
--   **Terminal-Native**: Your pair programmer in the shell. Unlike chat-based agents (like OpenClaw), Space Black lives in your dev environment with a rich TUI.
--   **Direct File Access**: Safe, native file manipulation (`read_file`, `write_file`) without shell quirks, working seamlessly across Windows, Mac, and Linux.
--   **Privacy-First**: All memory and configuration files are stored locally in `brain/`. Sensitive data (`.env`, `brain/USER.md`) is strictly excluded from Git.
--   **Secure Defaults**: Onboards new users with sanitized templates, ensuring no personal data leaks while preserving the agent's core personality.
+Space Black is the **Operating System for Agents**. It solves the hard problems of letting LLMs run locally:
+- **Terminal UI**: A beautiful, responsive TUI built with Textual.
+- **Local Memory**: Long-term storage (`brain/`) for context, ensuring the agent "remembers" you.
+- **Tool System**: Safe file I/O, command execution, and system monitoring.
+- **Browser Engine**: A full Chromium-based autonomous browser wrapper.
+
+## Who is Ghost?
+
+Ghost is the **Agent** living inside.
+- **Identity**: Defines its own personality in `brain/SOUL.md`.
+- **Autonomy**: Can plan multi-step tasks (e.g., "Research this error, fix the code, run the tests").
+- **Browsing**: Uses the Space Black browser to surf the live web, read documentation, and interact with sites.
+- **Evolution**: Updates its own system prompt based on your feedback.
+
+## Key Features
+
+### 🧠 Persistent Memory
+Ghost remembers. It maintains a relationship with you, storing preferences and project details in `brain/USER.md` and semantic memories in `brain/memory/`.
+
+### 🌐 Autonomous Web Browsing
+Ghost can surf the web like a human.
+- **Vision**: Sees page structure (Accessibility Tree), not just HTML soup.
+- **Interaction**: Clicks, types, scrolls, and navigates dynamic SPAs (React/Vue).
+- **Persistence**: Maintains cookies and sessions (stays logged in).
+[Read more about Browsing](docs/BROWSING.md)
+
+### ⚡ Background Daemon
+Run `./spaceblack daemon` to let Ghost work in the background. It checks for scheduled tasks and can even message you on Telegram when a job is done.
+
+### 🛠️ Modular Skills
+Extend Ghost's capabilities with skills defined in `config.json`:
+- **Telegram**: Chat with Ghost from your phone.
+- **Weather**: Real-time forecasts.
+- **Browser**: Full web access.
 
 ## Quick Start
-1.  **Clone**: `git clone https://github.com/udaysagar/SpaceBlack.git`
-2.  **Setup**: `./spaceblack onboard` (Installs Python dependencies + Browser binaries automatically)
-3.  **Run**: `./spaceblack start`
 
-The application will automatically detect missing configurations and launch a setup wizard to guide you through the process.
+1.  **Clone the Repo**:
+    ```bash
+    git clone https://github.com/udaysagar/SpaceBlack.git
+    cd SpaceBlack
+    ```
+
+2.  **Onboard**:
+    ```bash
+    ./spaceblack onboard
+    ```
+    *Installs dependencies, browser binaries, and sets up the environment.*
+
+3.  **Wake Ghost**:
+    ```bash
+    ./spaceblack start
+    ```
 
 ## Documentation
-For detailed guides, please refer to the `docs/` directory:
 
--   [**Installation Guide**](docs/INSTALLATION.md)
--   [**User Manual**](docs/USAGE.md)
--   [**Core Tools**](docs/TOOLS.md)
--   [**Modular Skills**](docs/SKILLS.md)
--   [**Memory System**](docs/MEMORY.md)
--   [**Security & Privacy**](docs/SECURITY.md)
--   [**Architecture**](docs/ARCHITECTURE.md)
+Space Black is documented extensively in the `docs/` directory:
+
+-   [**Introduction**](docs/INTRODUCTION.md): The philosophy of Space Black.
+-   [**User Manual**](docs/USAGE.md): How to interact with Ghost.
+-   [**Autonomous Browsing**](docs/BROWSING.md): Details on the browser engine.
+-   [**Architecture**](docs/ARCHITECTURE.md): How Space Black works under the hood.
+-   [**Tools**](docs/TOOLS.md): The toolset available to Ghost.
+-   [**Memory & Soul**](docs/MEMORY.md): How the agent's mind works.
+-   [**Security**](docs/SECURITY.md): Privacy and data safety.
 
 ## License
-MIT License. See LICENSE for details.
+MIT License.
