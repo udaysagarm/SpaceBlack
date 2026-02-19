@@ -23,14 +23,24 @@ load_dotenv(os.path.join(ROOT_DIR, ".env"))
 CONFIG_FILE = os.path.join(ROOT_DIR, "config.json")
 
 # Logging setup
+# Logging setup - key for TUI stability
+# Store logs in a file, NOT stdout, to prevent TUI glitches
+LOG_FILE = os.path.join(ROOT_DIR, "telegram_bot.log")
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.WARNING
+    level=logging.WARNING,
+    filename=LOG_FILE,  # Log to file!
+    filemode='a'
 )
 
-# Suppress httpx and telegram logs
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("telegram").setLevel(logging.WARNING)
+# Suppress all stdout/stderr from libraries
+sys.stdout = open(os.devnull, 'w')
+sys.stderr = open(os.devnull, 'w')
+
+# Suppress httpx and telegram logs further
+logging.getLogger("httpx").setLevel(logging.ERROR)
+logging.getLogger("telegram").setLevel(logging.ERROR)
 
 def load_config():
     config = {}
@@ -94,8 +104,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if result and "messages" in result and result["messages"]:
             latest_msg = result["messages"][-1]
             response_text = latest_msg.content
-            print(f"DEBUG: Response generated: {response_text[:50]}...")
-            await context.bot.send_message(chat_id=chat_id, text=response_text)
+            
+            # Fix for complex content types (JSON strings from Gemini/Anthropic)
+            if isinstance(response_text, str) and response_text.strip().startswith("["):
+                try:
+                    # Attempt to parse as JSON list of content blocks
+                    import json
+                    content_list = json.loads(response_text)
+                    if isinstance(content_list, list):
+                        text_parts = []
+                        for item in content_list:
+                            # Handle dicts with 'text' field
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_parts.append(item.get("text", ""))
+                            # Handle direct strings in list
+                            elif isinstance(item, str):
+                                text_parts.append(item)
+                        
+                        if text_parts:
+                            response_text = "".join(text_parts)
+                except Exception as e:
+                    # If parsing fails, use original text but log it
+                    print(f"DEBUG: Failed to parse complex content: {e}")
+            
+            # Handle if content is a list object (not string)
+            elif isinstance(response_text, list):
+                 text_parts = []
+                 for item in response_text:
+                     if isinstance(item, str):
+                         text_parts.append(item)
+                     elif isinstance(item, dict) and item.get("type") == "text":
+                         text_parts.append(item.get("text", ""))
+                 if text_parts:
+                     response_text = "".join(text_parts)
+
+            # Fallback for empty responses
+            if not response_text:
+                response_text = "✅ Task completed (No output)."
+
+            print(f"DEBUG: Response generated: {str(response_text)[:50]}...")
+            await context.bot.send_message(chat_id=chat_id, text=str(response_text))
         else:
              print("ERROR: Agent returned empty result.")
              await context.bot.send_message(chat_id=chat_id, text="⚠️ Error: Agent returned no response.")

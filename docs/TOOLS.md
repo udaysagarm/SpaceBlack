@@ -2,8 +2,23 @@
 
 Space Black comes equipped with a set of core tools that allow the agent to interact with the system, manage memory, and access the internet. These tools are defined in `agent.py` and the `tools/` directory.
 
-## System Tools
+### 🔐 Vault (Secure Storage)
+Manage sensitive credentials (API keys, passwords) securely.
+*   `get_secret(key)`: Retrieve a secret.
+*   `set_secret(key, value)`: Save a secret (local only, git-ignored).
+*   `list_secrets()`: See what keys are available.
 
+### 🌐 Interactive Browser (Autonomous)
+Advanced browsing with state persistence (cookies) and interaction.
+*   `browser_go_to(url)`: Navigate to a URL.
+*   `browser_click(selector)`: Click elements (buttons, links).
+*   `browser_type(selector, text)`: Type into forms.
+*   `browser_scroll(direction, amount)`: Scroll the page.
+*   `browser_get_state()`: Get a text representation of the page's interactive elements.
+*   `browser_screenshot()`: Save a snapshot of the current view.
+
+### 🛠️ System Tools
+Core agent capabilities.
 ### execute_terminal_command
 Executes shell commands on the host machine.
 -   **Security**: Restricted to non-interactive commands.

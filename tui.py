@@ -389,9 +389,8 @@ class SkillsScreen(ModalScreen):
         # Telegram Config
         telegram_cfg = skills_config.get("telegram", {})
         tg_enabled = telegram_cfg.get("enabled", False)
-        tg_bot_token = telegram_cfg.get("bot_token", "")
-        tg_user_id = telegram_cfg.get("allowed_user_id", "")
-
+        # We don't load secrets into UI for security & persistence
+        
         with Container(id="skills-dialog"):
             yield Label("⚡ Agent Skills Manager", classes="config-title")
             
@@ -403,7 +402,7 @@ class SkillsScreen(ModalScreen):
                 
                 yield Label("Allows the agent to read dynamic websites using Chromium.", classes="description")
                 yield Label("Requires 'playwright install chromium' to be run once.", classes="help-text")
-
+ 
             # OpenWeather Skill
             with Vertical(classes="skill-row"):
                 with Horizontal(classes="skill-header"):
@@ -412,7 +411,7 @@ class SkillsScreen(ModalScreen):
                 
                 yield Label("Provides real-time weather information for any city.", classes="description")
                 yield Label("API Key:", classes="api-key-label")
-                yield Input(value=ow_api_key, placeholder="Enter OpenWeather API Key", password=True, id="openweather_key", classes="api-key-input")
+                yield Input(value="", placeholder="(Hidden) - Enter new key to update", password=True, id="openweather_key", classes="api-key-input")
             
             # Telegram Bot Skill
             with Vertical(classes="skill-row"):
@@ -423,10 +422,10 @@ class SkillsScreen(ModalScreen):
                 yield Label("Chat with your agent remotely via Telegram.", classes="description")
                 
                 yield Label("Bot Token:", classes="api-key-label")
-                yield Input(value=tg_bot_token, placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11", password=True, id="telegram_token", classes="api-key-input")
+                yield Input(value="", placeholder="(Hidden) - Enter new token to update", password=True, id="telegram_token", classes="api-key-input")
                 
                 yield Label("Allowed User ID:", classes="api-key-label")
-                yield Input(value=tg_user_id, placeholder="123456789", id="telegram_user_id", classes="api-key-input")
+                yield Input(value="", placeholder="(Hidden) - Enter new ID to update", id="telegram_user_id", classes="api-key-input")
                 yield Label("Required for security. Get yours from @userinfobot.", classes="help-text")
 
             with Horizontal(classes="field-group btn-group"):
@@ -464,23 +463,26 @@ class SkillsScreen(ModalScreen):
         if "skills" not in config_data:
             config_data["skills"] = {}
             
-        # Update OpenWeather
-        config_data["skills"]["openweather"] = {
-            "enabled": ow_enabled,
-            "api_key": ow_key
-        }
+        # Update OpenWeather (Merge)
+        ow_data = config_data["skills"].get("openweather", {})
+        ow_data["enabled"] = ow_enabled
+        if ow_key: # Only update if user provided a new key
+             ow_data["api_key"] = ow_key
+        config_data["skills"]["openweather"] = ow_data
 
-        # Update Browser
-        config_data["skills"]["browser"] = {
-            "enabled": browser_enabled
-        }
+        # Update Browser (Merge)
+        browser_data = config_data["skills"].get("browser", {})
+        browser_data["enabled"] = browser_enabled
+        config_data["skills"]["browser"] = browser_data
 
-        # Update Telegram
-        config_data["skills"]["telegram"] = {
-            "enabled": tg_enabled,
-            "bot_token": tg_token,
-            "allowed_user_id": tg_user_id
-        }
+        # Update Telegram (Merge)
+        tg_data = config_data["skills"].get("telegram", {})
+        tg_data["enabled"] = tg_enabled
+        if tg_token:
+             tg_data["bot_token"] = tg_token
+        if tg_user_id:
+             tg_data["allowed_user_id"] = tg_user_id
+        config_data["skills"]["telegram"] = tg_data
         
         try:
              with open(CONFIG_FILE, "w") as f:

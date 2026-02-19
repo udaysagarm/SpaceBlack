@@ -177,9 +177,22 @@ def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
                 res = res[0]
             
             content = res.content
-            if isinstance(content, list): content = " ".join([str(p) for p in content])
-            response = content.strip()
+            if isinstance(content, list):
+                # Extract text from parts if it's a list of dicts
+                parts = []
+                for p in content:
+                    if isinstance(p, dict) and "text" in p:
+                        parts.append(p["text"])
+                    else:
+                        parts.append(str(p))
+                content = " ".join(parts)
             
+            response = str(content).strip()
+            
+            # Update state file
+            with open(HEARTBEAT_STATE_FILE, "w") as f:
+                json.dump({"last_run": now, "status": "ok"}, f)
+
             if "Status: OK" in response:
                 # Remove "Status: OK" to see if there are other instructions
                 cleaned_response = response.replace("Status: OK", "").strip()
@@ -213,7 +226,11 @@ from tools.system import (
 from tools.scheduler import schedule_task, cancel_task
 from tools.search import web_search
 from tools.skills.openweather import get_current_weather
-from tools.skills.browser.browser import visit_page
+from tools.skills.openweather import get_current_weather
+# OpenClaw-style unified browser tool
+from tools.skills.browser.browser import browser_act
+# Use Vault Tools
+from tools.vault import get_secret, set_secret, list_secrets
 from tools.files import read_file, write_file, list_directory
 from tools.skills.telegram.send_message import send_telegram_message
 
@@ -262,10 +279,14 @@ def run_agent(state: AgentState):
         tools.append(get_current_weather)
 
     if skills_config.get("browser", {}).get("enabled", False):
-        tools.append(visit_page)
+        # OpenClaw-style unified browser tool
+        tools.append(browser_act)
 
     # File tools are always available
     tools.extend([read_file, write_file, list_directory])
+    
+    # Vault Tools (Always available for memory management)
+    tools.extend([get_secret, set_secret, list_secrets])
     
     # Telegram tool
     tools.append(send_telegram_message)
@@ -305,7 +326,14 @@ def build_graph():
     # ToolNode documentation says it executes tools called by the LLM.
     # Providing all tools safely is fine, as the LLM won't call them if not bound.
     # However, to be strict, we can just expose all.
-    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, cancel_task, web_search, get_current_weather, visit_page, read_file, write_file, list_directory, exit_conversation, send_telegram_message]
+    tools = [
+        reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, 
+        schedule_task, cancel_task, web_search, get_current_weather, 
+        browser_act,
+        get_secret, set_secret, list_secrets,
+        read_file, write_file, list_directory, 
+        exit_conversation, send_telegram_message
+    ]
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
 

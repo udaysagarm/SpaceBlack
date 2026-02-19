@@ -31,6 +31,14 @@ b. **Daemon (`daemon.py`)**:
 - **Skills**: Modular integrations (Weather, Browser, Telegram).
 - **Design**: Tools are simple Python functions decorated with `@tool`.
 
+### 5. Autonomous Browser Engine (OpenClaw-Style)
+This agent runs a persistent browser session (`interactive_browser.py`) that mirrors the OpenClaw architecture:
+- **Vision**: Uses **Chrome DevTools Protocol (CDP)** to fetch the Accessibility Tree (AXTree), bypassing simple HTML parsers.
+- **Action**: Uses Playwright for high-fidelity interaction (Click, Type, Select).
+- **Think-Act-Loop**: Managed by **LangGraph**, allowing the agent to reason about the page state before multiple actions.
+- **Stealth**: Masks automation flags and blocks ads/trackers for speed and evasion.
+- **Persistence**: Maintains session state (cookies, local storage) in `brain/vault/`.
+
 ---
 
 ## Data Flow
