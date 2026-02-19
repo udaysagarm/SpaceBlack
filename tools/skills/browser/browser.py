@@ -98,16 +98,123 @@ _USER_AGENT = (
 
 @dataclass
 class _Elem:
-    """An interactive element discovered in the AX tree."""
+    """An interactive element discovered in the AX tree or iframe."""
     backend_node_id: int
     role: str
     name: str
     value: str = ""
     description: str = ""
+    frame_index: int = 0    # 0 = main frame, 1+ = child frame
+    selector: str = ""      # CSS selector (used for iframe elements)
 
 
 # page_id → {ref: _Elem}
 _REGISTRY: Dict[int, Dict[int, _Elem]] = {}
+
+
+async def _discover_iframe_elements(page: Page, registry: Dict[int, _Elem], start_ref: int) -> Tuple[Dict[int, _Elem], List[str], int]:
+    """
+    Discover interactive elements inside ALL iframes using Playwright JS.
+    Returns updated registry, snapshot lines, and next ref counter.
+    Works on any site — email clients, banking, embedded apps, SPAs.
+    """
+    lines: List[str] = []
+    ref = start_ref
+
+    for fi, frame in enumerate(page.frames):
+        if fi == 0:
+            continue  # Main frame handled by AX tree
+        try:
+            elements = await asyncio.wait_for(
+                frame.evaluate("""() => {
+                    const results = [];
+                    const selectors = 'a[href], button, input, textarea, select, ' +
+                        '[role="button"], [role="link"], [role="menuitem"], [role="tab"], ' +
+                        '[role="checkbox"], [role="radio"], [role="switch"], [role="textbox"], ' +
+                        '[role="searchbox"], [role="combobox"], [contenteditable="true"]';
+                    const els = document.querySelectorAll(selectors);
+                    for (const el of els) {
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width === 0 || rect.height === 0) continue;
+                        if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') continue;
+
+                        const role = el.getAttribute('role') || el.tagName.toLowerCase();
+                        const name = (el.getAttribute('aria-label') ||
+                                      el.textContent?.trim()?.slice(0, 80) || '');
+                        const value = el.value || '';
+                        const type = el.getAttribute('type') || '';
+
+                        // Build a unique selector
+                        let sel = '';
+                        if (el.id) {
+                            sel = '#' + CSS.escape(el.id);
+                        } else {
+                            const tag = el.tagName.toLowerCase();
+                            const ariaLabel = el.getAttribute('aria-label');
+                            if (ariaLabel) {
+                                sel = tag + '[aria-label="' + ariaLabel.replace(/"/g, '\\"') + '"]';
+                            } else if (el.name) {
+                                sel = tag + '[name="' + el.name.replace(/"/g, '\\"') + '"]';
+                            } else if (el.className && typeof el.className === 'string') {
+                                const cls = el.className.trim().split(/\\s+/).filter(Boolean).slice(0, 3).join('.');
+                                sel = tag + (cls ? '.' + cls : '');
+                            } else {
+                                sel = tag;
+                            }
+                            // Add nth-of-type if needed for uniqueness
+                            const matches = document.querySelectorAll(sel);
+                            if (matches.length > 1) {
+                                const idx = Array.from(matches).indexOf(el);
+                                sel += ':nth-of-type(' + (idx + 1) + ')';
+                            }
+                        }
+
+                        results.push({ role, name, value, type, selector: sel });
+                    }
+                    return results.slice(0, 50);
+                }"""),
+                timeout=5.0,
+            )
+
+            if not elements:
+                continue
+
+            # Add a frame header
+            frame_url = frame.url[:60] if frame.url else "(embedded)"
+            lines.append(f"\n── Frame [{fi}]: {frame_url} ──")
+
+            for el_data in elements:
+                if ref >= start_ref + _MAX_ELEMENTS:
+                    break
+                ref += 1
+                role = el_data.get("role", "element")
+                name = el_data.get("name", "")
+                value = el_data.get("value", "")
+                selector = el_data.get("selector", "")
+                el_type = el_data.get("type", "")
+
+                registry[ref] = _Elem(
+                    backend_node_id=0,  # Not available for iframe elements
+                    role=role,
+                    name=name,
+                    value=value,
+                    frame_index=fi,
+                    selector=selector,
+                )
+
+                label = role.capitalize()
+                detail = repr(name) if name else "(no label)"
+                if el_type:
+                    detail += f" type={el_type}"
+                if value and role in ("input", "textarea", "textbox", "searchbox"):
+                    detail += f" value={repr(value[:30])}"
+                lines.append(f"  [{ref:>3}] {label}: {detail}")
+
+        except Exception as e:
+            log.debug("iframe element discovery failed for frame %d: %s", fi, e)
+            continue
+
+    return registry, lines, ref
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -164,7 +271,7 @@ def _ax_children_ids(node: dict) -> List[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _get_ax_tree(cdp: CDPSession) -> List[dict]:
-    """Fetch the full accessibility tree via CDP."""
+    """Fetch the full accessibility tree via CDP (main frame only)."""
     try:
         result = await asyncio.wait_for(
             cdp.send("Accessibility.getFullAXTree", {}),
@@ -174,6 +281,45 @@ async def _get_ax_tree(cdp: CDPSession) -> List[dict]:
     except Exception as e:
         log.warning("AX tree fetch failed: %s", e)
         return []
+
+
+async def _extract_frames_text(page: Page, limit: int = 4000) -> str:
+    """
+    Extract visible text content from ALL frames (main + iframes) using JS.
+    This reliably reaches dynamically loaded content inside iframes that
+    the main-frame AX tree cannot see (email clients, banking apps, SPAs).
+    """
+    parts: List[str] = []
+    total = 0
+    for frame in page.frames:
+        if total >= limit:
+            break
+        try:
+            text = await asyncio.wait_for(
+                frame.evaluate("""() => {
+                    // Try semantic containers first, fall back to body
+                    const candidates = [
+                        'main', '[role="main"]', 'article', '#content',
+                        '.inbox', '.message-list', '.mail-list',
+                        '.email-list', 'table', '[role="grid"]',
+                        '[role="list"]', '[role="tabpanel"]',
+                    ];
+                    let root = null;
+                    for (const sel of candidates) {
+                        root = document.querySelector(sel);
+                        if (root) break;
+                    }
+                    if (!root) root = document.body;
+                    return root.innerText.slice(0, 4000);
+                }"""),
+                timeout=3.0,
+            )
+            if text and len(text.strip()) > 20:
+                parts.append(text.strip())
+                total += len(text)
+        except Exception:
+            pass
+    return "\n---\n".join(parts)[:limit] if parts else ""
 
 
 def _build_snapshot(nodes: List[dict]) -> Tuple[Dict[int, _Elem], str]:
@@ -362,9 +508,24 @@ async def _take_snapshot(page: Page, cdp: CDPSession) -> str:
         pass
 
     header = f"URL: {url}\nTitle: {title}{tab_info}"
-    footer = f"\n({interactive_count} interactive elements. Use ref=N to interact.)"
 
-    return f"{header}\n\n{body}{footer}"
+    # Discover iframe interactive elements (buttons, links, inputs in iframes)
+    iframe_lines: List[str] = []
+    if len(page.frames) > 1:
+        try:
+            registry, iframe_lines, _ = await _discover_iframe_elements(page, registry, interactive_count)
+            _REGISTRY[id(page)] = registry  # Update with iframe elements
+        except Exception as e:
+            log.debug("iframe element discovery failed: %s", e)
+
+    total_interactive = len(registry)
+    footer = f"\n({total_interactive} interactive elements. Use ref=N to interact.)"
+
+    iframe_section = ""
+    if iframe_lines:
+        iframe_section = "\n" + "\n".join(iframe_lines)
+
+    return f"{header}\n\n{body}{iframe_section}{footer}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -649,30 +810,39 @@ def _get_elem(page: Page, ref: int) -> Optional[_Elem]:
 
 
 async def _do_click(page: Page, cdp: CDPSession, ref: int) -> str:
-    """Click an element with fallback chain: box-coords → scroll+retry → JS click."""
+    """Click an element — supports both main frame (CDP) and iframe (Playwright) elements."""
     elem = _get_elem(page, ref)
     if not elem:
         return f"Error: ref [{ref}] not found. Run snapshot to refresh."
 
     url_before = page.url
 
-    # Strategy 1: CDP box-model click
-    box = await _get_box(cdp, elem.backend_node_id)
-    if box:
-        cx, cy = box
-        await _cdp_click(cdp, cx, cy)
-        method = "cdp-click"
+    # ── Iframe element: use Playwright frame locator ──
+    if elem.frame_index > 0 and elem.selector:
+        try:
+            frame = page.frames[elem.frame_index]
+            locator = frame.locator(elem.selector).first
+            await locator.scroll_into_view_if_needed(timeout=3000)
+            await locator.click(timeout=5000)
+            method = "frame-click"
+        except Exception as e:
+            return f"Error: could not click [{ref}] in iframe ({elem.role}: {elem.name}): {e}"
     else:
-        # Strategy 2: JS click fallback
-        if await _js_click(cdp, elem.backend_node_id):
-            method = "js-click"
+        # ── Main frame: CDP click with fallbacks ──
+        box = await _get_box(cdp, elem.backend_node_id)
+        if box:
+            cx, cy = box
+            await _cdp_click(cdp, cx, cy)
+            method = "cdp-click"
         else:
-            # Strategy 3: Focus + Enter
-            if await _cdp_focus(cdp, elem.backend_node_id):
-                await _cdp_key(cdp, "Enter")
-                method = "focus-enter"
+            if await _js_click(cdp, elem.backend_node_id):
+                method = "js-click"
             else:
-                return f"Error: could not click [{ref}] ({elem.role}: {elem.name})"
+                if await _cdp_focus(cdp, elem.backend_node_id):
+                    await _cdp_key(cdp, "Enter")
+                    method = "focus-enter"
+                else:
+                    return f"Error: could not click [{ref}] ({elem.role}: {elem.name})"
 
     # Wait for potential navigation or JS update
     await asyncio.sleep(0.3)
@@ -686,12 +856,25 @@ async def _do_click(page: Page, cdp: CDPSession, ref: int) -> str:
 
 
 async def _do_fill(page: Page, cdp: CDPSession, ref: int, text: str) -> str:
-    """Fill an element: click to focus → clear existing → insert text."""
+    """Fill an element — supports both main frame (CDP) and iframe (Playwright)."""
     elem = _get_elem(page, ref)
     if not elem:
         return f"Error: ref [{ref}] not found. Run snapshot to refresh."
 
-    # Click to focus
+    # ── Iframe element: use Playwright frame locator ──
+    if elem.frame_index > 0 and elem.selector:
+        try:
+            frame = page.frames[elem.frame_index]
+            locator = frame.locator(elem.selector).first
+            await locator.click(timeout=3000)
+            await asyncio.sleep(0.1)
+            await locator.fill(text, timeout=3000)
+            await asyncio.sleep(0.15)
+            return f"Filled [{ref}] {elem.role}: {repr(elem.name)} with {repr(text)}"
+        except Exception as e:
+            return f"Error: could not fill [{ref}] in iframe: {e}"
+
+    # ── Main frame: CDP ──
     box = await _get_box(cdp, elem.backend_node_id)
     if box:
         cx, cy = box
@@ -702,13 +885,10 @@ async def _do_fill(page: Page, cdp: CDPSession, ref: int, text: str) -> str:
             return f"Error: could not focus [{ref}] ({elem.role}: {elem.name})"
         await asyncio.sleep(0.1)
 
-    # Select all + delete (clear field)
     await _cdp_key(cdp, "Control+a")
     await asyncio.sleep(0.05)
     await _cdp_key(cdp, "Delete")
     await asyncio.sleep(0.05)
-
-    # Insert text
     await _cdp_type(cdp, text)
     await asyncio.sleep(0.15)
 
@@ -716,11 +896,25 @@ async def _do_fill(page: Page, cdp: CDPSession, ref: int, text: str) -> str:
 
 
 async def _do_type(page: Page, cdp: CDPSession, ref: int, text: str) -> str:
-    """Type into an element (append, don't clear)."""
+    """Type into an element — supports both main frame (CDP) and iframe (Playwright)."""
     elem = _get_elem(page, ref)
     if not elem:
         return f"Error: ref [{ref}] not found. Run snapshot to refresh."
 
+    # ── Iframe element ──
+    if elem.frame_index > 0 and elem.selector:
+        try:
+            frame = page.frames[elem.frame_index]
+            locator = frame.locator(elem.selector).first
+            await locator.click(timeout=3000)
+            await asyncio.sleep(0.1)
+            await locator.type(text, timeout=3000)
+            await asyncio.sleep(0.1)
+            return f"Typed {repr(text)} into [{ref}] {elem.role}: {repr(elem.name)}"
+        except Exception as e:
+            return f"Error: could not type into [{ref}] in iframe: {e}"
+
+    # ── Main frame: CDP ──
     box = await _get_box(cdp, elem.backend_node_id)
     if box:
         cx, cy = box
@@ -738,11 +932,22 @@ async def _do_type(page: Page, cdp: CDPSession, ref: int, text: str) -> str:
 
 
 async def _do_hover(page: Page, cdp: CDPSession, ref: int) -> str:
-    """Hover over an element."""
+    """Hover over an element — supports both main frame and iframe."""
     elem = _get_elem(page, ref)
     if not elem:
         return f"Error: ref [{ref}] not found."
 
+    # ── Iframe element ──
+    if elem.frame_index > 0 and elem.selector:
+        try:
+            frame = page.frames[elem.frame_index]
+            locator = frame.locator(elem.selector).first
+            await locator.hover(timeout=3000)
+            return f"Hovered over [{ref}] {elem.role}: {repr(elem.name)}"
+        except Exception as e:
+            return f"Error: could not hover [{ref}] in iframe: {e}"
+
+    # ── Main frame: CDP ──
     box = await _get_box(cdp, elem.backend_node_id)
     if not box:
         return f"Error: could not get coordinates for [{ref}]"
@@ -818,13 +1023,16 @@ async def _do_upload(cdp: CDPSession, page: Page, ref: int, filepath: str) -> st
 
 async def _get_page_text(page: Page, cdp: CDPSession) -> str:
     """
-    Extract readable page content from the AX tree.
-    Better than JS innerText — works through shadow DOM and iframes.
+    Extract readable page content.
+    Combines AX tree text (main frame) + JS extraction from ALL frames
+    for maximum content coverage on any website.
     """
+    # 1. AX tree content (main frame — good for structured content)
     nodes = await _get_ax_tree(cdp)
-    lines: List[str] = []
+    ax_lines: List[str] = []
     total = 0
-    limit = 6000
+    limit = 4000
+    seen_texts = set()
 
     for node in nodes:
         if total >= limit:
@@ -836,37 +1044,62 @@ async def _get_page_text(page: Page, cdp: CDPSession) -> str:
         if not name or len(name.strip()) < 3:
             continue
 
+        key = name.strip()[:100]
+        if key in seen_texts:
+            continue
+        seen_texts.add(key)
+
         if role in ("heading",):
             line = f"## {name}"
         elif role in ("listitem",):
-            line = f"• {name}"
+            line = f"\u2022 {name}"
         elif role in ("link",):
             line = f"[{name}]"
         elif role in ("statictext", "text", "paragraph", "blockquote",
-                       "cell", "gridcell", "caption", "definition"):
+                       "cell", "gridcell", "caption", "definition",
+                       "contentinfo", "article", "main", "region",
+                       "complementary", "group", "section"):
             line = name
         elif role in ("row",):
             line = f"| {name}"
+        elif role in ("img", "image"):
+            line = f"[Image: {name}]"
+        elif role in ("label",):
+            line = f"{name}:"
+        elif role in ("status", "alert", "log"):
+            line = f"! {name}"
+        elif role in ("treeitem",):
+            line = f"  > {name}"
+        elif role in ("tab",):
+            line = f"[Tab: {name}]"
+        elif role in ("dialog", "alertdialog"):
+            line = f"DIALOG: {name}"
+        elif role in ("button",) and len(name) > 10:
+            line = f"[{name}]"
+        elif role in ("generic", "none", "presentation") and len(name) > 20:
+            line = name
         else:
             continue
 
         if len(line) > 300:
             line = line[:297] + "..."
-        lines.append(line)
+        ax_lines.append(line)
         total += len(line)
 
-    if not lines:
-        # Fallback to JS extraction
-        try:
-            text = await page.evaluate("""() => {
-                const root = document.querySelector('main,[role="main"],article,#content') || document.body;
-                return root.innerText.slice(0, 6000);
-            }""")
-            return text or "(empty page)"
-        except Exception:
-            return "(could not extract text)"
+    ax_content = "\n".join(ax_lines) if ax_lines else ""
 
-    return "\n".join(lines)
+    # 2. JS extraction from ALL frames (always runs — catches iframe content)
+    js_content = await _extract_frames_text(page, limit=4000)
+
+    # 3. Merge: AX content first, then any JS content that adds new info
+    if ax_content and js_content:
+        return f"{ax_content}\n\n── Additional Page Content ──\n{js_content}"[:6000]
+    elif js_content:
+        return js_content[:6000]
+    elif ax_content:
+        return ax_content
+    else:
+        return "(empty page — no content detected)"
 
 
 async def _dismiss_banners(page: Page) -> None:

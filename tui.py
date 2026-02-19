@@ -728,7 +728,7 @@ class AgentInterface(App):
     BINDINGS = [
         Binding("ctrl+l", "clear_chat", "Clear Chat", show=True),
         Binding("ctrl+r", "restart_session", "Restart", show=True),
-        Binding("ctrl+s", "stop_agent", "Stop Agent", show=True),
+        Binding("ctrl+x", "stop_agent", "Stop Agent", show=True),
         Binding("escape", "dismiss_modal", "Dismiss", show=False),
     ]
 
@@ -888,16 +888,16 @@ class AgentInterface(App):
             # Main chat area
             with Container(id="chat-container"):
                 with ScrollableContainer(id="chat-history"):
-                    banner = """
- ____                         ____  _            _
-/ ___| _ __   __ _  ___ ___  | __ )| | __ _  ___| | __
-\\___ \\| '_ \\ / _` |/ __/ _ \\ |  _ \\| |/ _` |/ __| |/ /
- ___) | |_) | (_| | (_|  __/ | |_) | | (_| | (__|   <
-|____/| .__/ \\__,_|\\___\\___| |____/|_|\\__,_|\\___|_|\\_\\
-      |_|"""
-                    yield Static(f"[bold cyan]{banner}[/]", classes="banner")
+                    banner = r"""
+   _____                      ____  _            _
+  / ___/____  ____ _________ / __ )| | __ _ ____| | __
+  \__ \/ __ \/ __ `/ ___/ _ \ __  \| |/ _` / ___| |/ /
+ ___/ / /_/ / /_/ / /__/  __/ |_) /| | (_| ( (__|   <
+/____/ .___/\__,_/\___/\___/_____/_|\__,_|\___|_|\_\
+    /_/"""
+                    yield Static(f"[rgb(27,242,34)]{banner}[/]", classes="banner")
                     yield Static(
-                        "Type a message to chat  |  /config  /skills  /tasks  |  Ctrl+S stop  Ctrl+R restart  Ctrl+L clear  |  Up/Down for prompt history",
+                        "Type a message to chat  |  /config  /skills  /tasks  |  Ctrl+X stop  Ctrl+R restart  Ctrl+L clear  |  Up/Down for prompt history",
                         classes="welcome-msg",
                     )
 
@@ -920,6 +920,7 @@ class AgentInterface(App):
         self._agent_worker: Worker | None = None
         self._thinking_widget: ThinkingIndicator | None = None
         self._msg_count = 0
+        self._processing = False  # Guard: is agent currently processing?
         self.update_status_bar()
         self.set_interval(60, self.scheduled_heartbeat)
         self.scheduled_heartbeat()
@@ -944,13 +945,15 @@ class AgentInterface(App):
 
     # ── Heartbeat ──────────────────────────────────────────────────────────
 
-    @work(exclusive=True, thread=True)
+    @work(exclusive=True, thread=True, group="heartbeat")
     def scheduled_heartbeat(self):
+        # NEVER call process_agent_response from here — it would cancel user's work
+        if self._processing:
+            return  # Don't disturb active agent work
         try:
              result = run_autonomous_heartbeat()
              if result:
                  self.call_from_thread(self.display_system_alert, result)
-                 self.process_agent_response(f"SYSTEM ALERT: {result}")
         except Exception:
             pass
 
@@ -1007,8 +1010,9 @@ class AgentInterface(App):
 
     # ── Agent Processing ───────────────────────────────────────────────────
 
-    @work(exclusive=True)
+    @work(exclusive=True, group="agent")
     async def process_agent_response(self, user_input: str) -> None:
+        self._processing = True
         self.messages.append(HumanMessage(content=user_input))
         inputs = {"messages": self.messages}
 
@@ -1031,10 +1035,12 @@ class AgentInterface(App):
 
         except asyncio.CancelledError:
             self._hide_thinking()
-            self._display_system_message("Agent stopped by user.")
+            self._display_system_message("Agent interrupted.")
         except Exception as e:
             self._hide_thinking()
             self._display_agent_message(f"Error: {str(e)}")
+        finally:
+            self._processing = False
 
     def _show_thinking(self):
         """Show animated thinking indicator and stop button."""
