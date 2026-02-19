@@ -592,7 +592,7 @@ class BrowserSession:
         # Use persistent context for real login persistence
         cls._context = await cls._playwright.chromium.launch_persistent_context(
             user_data_dir=str(_PROFILE_DIR),
-            headless=False,
+            headless=True,
             args=launch_args,
             viewport=_DEFAULT_VIEWPORT,
             user_agent=_USER_AGENT,

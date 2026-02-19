@@ -1090,13 +1090,17 @@ class AgentInterface(App):
     def action_stop_agent(self) -> None:
         """Stop the currently running agent response."""
         workers = self.workers
+        stopped = False
         for worker in workers:
-            if worker.name == "process_agent_response" and worker.state == WorkerState.RUNNING:
+            if worker.group == "agent" and not worker.is_cancelled:
                 worker.cancel()
-                self._hide_thinking()
-                self._display_system_message("Agent stopped.")
-                return
-        self.notify("No active agent response to stop.", severity="warning")
+                stopped = True
+
+        if stopped:
+            self._hide_thinking()
+            self._display_system_message("Agent stopped.")
+        else:
+            self.notify("No active agent response to stop.", severity="warning")
 
     def action_clear_chat(self) -> None:
         """Clear the chat display (keep conversation memory)."""
