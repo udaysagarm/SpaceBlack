@@ -10,6 +10,7 @@ duckduckgo-search
 google-generativeai
 httpx
 python-telegram-bot
+discord.py
 
 # Browser Automation
 playwright

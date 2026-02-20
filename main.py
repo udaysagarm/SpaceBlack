@@ -81,24 +81,47 @@ def main():
                  print(f"   Telegram Bot PID: {p.pid}")
             else:
                  print(f"⚠️  Telegram Bot script not found at {bot_path}")
+                 
+        # 2. Start Discord Bot if enabled
+        discord_config = config.get("skills", {}).get("discord", {})
+        if discord_config.get("enabled"):
+            print("🚀 Launching Discord Bot...")
+            discord_bot_path = os.path.join("tools", "skills", "discord", "bot.py")
+            if os.path.exists(discord_bot_path):
+                 p = subprocess.Popen([sys.executable, discord_bot_path])
+                 processes.append(p)
+                 print(f"   Discord Bot PID: {p.pid}")
+            else:
+                 print(f"⚠️  Discord Bot script not found at {discord_bot_path}")
+                 
     except Exception as e:
         print(f"⚠️  Failed to launch background skills: {e}")
 
-    # 2. Start TUI (Blocking)
-    try:
-        subprocess.run([sys.executable, "tui.py"])
-    except KeyboardInterrupt:
-        print("\nAgent stopped.")
-    finally:
-        # Cleanup background processes
+    # Register robust cleanup handler
+    import atexit
+    def cleanup_background_processes():
         print("\nStopping background services...")
         for p in processes:
             try:
                 p.terminate()
                 p.wait(timeout=2)
             except:
-                p.kill()
+                try: 
+                    p.kill() 
+                except: 
+                    pass
         print("Goodbye.")
+
+    atexit.register(cleanup_background_processes)
+
+    # 3. Start TUI (Blocking)
+    try:
+        subprocess.run([sys.executable, "tui.py"])
+    except KeyboardInterrupt:
+        print("\nAgent stopped.")
+    finally:
+        # atexit will handle the process killing now
+        pass
 
 if __name__ == "__main__":
     main()

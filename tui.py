@@ -21,7 +21,7 @@ import os
 from brain.llm_factory import get_llm
 from brain.memory_manager import SOUL_FILE
 
-from agent import app as agent_app, CONFIG_FILE, ENV_FILE, run_autonomous_heartbeat
+from agent import app as agent_app, CONFIG_FILE, ENV_FILE, run_autonomous_heartbeat, load_chat_history, save_chat_history, CHAT_HISTORY_FILE
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -373,11 +373,20 @@ class SkillsScreen(ModalScreen):
         width: 85%;
         max-width: 80;
         height: 85%;
-        max-height: 45;
+        max-height: 50;
         border: tall $accent;
         padding: 1 2;
         background: $surface;
+        layout: vertical;
+    }
+
+    #skills-list {
+        height: 1fr;
+        width: 100%;
         overflow-y: auto;
+        padding-right: 1;
+        padding-bottom: 2;
+        margin-bottom: 1;
     }
 
     .config-title {
@@ -427,11 +436,14 @@ class SkillsScreen(ModalScreen):
 
     .api-key-label {
         margin-top: 1;
+        margin-left: 1;
         color: $text;
     }
 
     .api-key-input {
         margin-top: 0;
+        margin-left: 1;
+        width: 1fr;
         border: solid $accent;
         background: $surface;
     }
@@ -439,6 +451,13 @@ class SkillsScreen(ModalScreen):
     .description {
         color: $text-muted;
         margin-bottom: 1;
+    }
+    
+    .btn-group {
+        height: auto;
+        dock: bottom;
+        margin-top: 1;
+        align: right middle;
     }
     """
 
@@ -457,39 +476,76 @@ class SkillsScreen(ModalScreen):
         browser_cfg = skills_config.get("browser", {})
         browser_enabled = browser_cfg.get("enabled", False)
 
+        github_cfg = skills_config.get("github", {})
+        gh_enabled = github_cfg.get("enabled", False)
+
+        stripe_cfg = skills_config.get("stripe", {})
+        stripe_enabled = stripe_cfg.get("enabled", False)
+
+        discord_cfg = skills_config.get("discord", {})
+        discord_enabled = discord_cfg.get("enabled", False)
+
         telegram_cfg = skills_config.get("telegram", {})
         tg_enabled = telegram_cfg.get("enabled", False)
 
         with Container(id="skills-dialog"):
             yield Label("Agent Skills Manager", classes="config-title")
 
-            with Vertical(classes="skill-row"):
-                with Horizontal(classes="skill-header"):
-                    yield Label("Headless Browser (Autonomous Browsing)", classes="skill-name")
-                    yield Switch(value=browser_enabled, id="browser_switch")
-                yield Label("Allows the agent to browse the web autonomously using Chromium.", classes="description")
-                yield Label("Requires 'playwright install chromium' to be run once.", classes="help-text")
+            with Vertical(id="skills-list"):
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("Headless Browser (Autonomous Browsing)", classes="skill-name")
+                        yield Switch(value=browser_enabled, id="browser_switch")
+                    yield Label("Allows the agent to browse the web autonomously using Chromium.", classes="description")
+                    yield Label("Requires 'playwright install chromium' to be run once.", classes="help-text")
 
-            with Vertical(classes="skill-row"):
-                with Horizontal(classes="skill-header"):
-                    yield Label("OpenWeather", classes="skill-name")
-                    yield Switch(value=ow_enabled, id="openweather_switch")
-                yield Label("Provides real-time weather information for any city.", classes="description")
-                yield Label("API Key:", classes="api-key-label")
-                yield Input(value="", placeholder="(Hidden) - Enter new key to update", password=True, id="openweather_key", classes="api-key-input")
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("OpenWeather", classes="skill-name")
+                        yield Switch(value=ow_enabled, id="openweather_switch")
+                    yield Label("Provides real-time weather information for any city.", classes="description")
+                    yield Label("API Key:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new key to update", password=True, id="openweather_key", classes="api-key-input")
 
-            with Vertical(classes="skill-row"):
-                with Horizontal(classes="skill-header"):
-                    yield Label("Telegram Bot Gateway", classes="skill-name")
-                    yield Switch(value=tg_enabled, id="telegram_switch")
-                yield Label("Chat with your agent remotely via Telegram.", classes="description")
-                yield Label("Bot Token:", classes="api-key-label")
-                yield Input(value="", placeholder="(Hidden) - Enter new token to update", password=True, id="telegram_token", classes="api-key-input")
-                yield Label("Allowed User ID:", classes="api-key-label")
-                yield Input(value="", placeholder="(Hidden) - Enter new ID to update", id="telegram_user_id", classes="api-key-input")
-                yield Label("Required for security. Get yours from @userinfobot.", classes="help-text")
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("GitHub Autonomous Acts", classes="skill-name")
+                        yield Switch(value=gh_enabled, id="github_switch")
+                    yield Label("Manage repos, issues, and commit files remotely via the API.", classes="description")
+                    yield Label("Personal Access Token (classic):", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new PAT to update", password=True, id="github_token", classes="api-key-input")
+                    yield Label("Requires 'repo' scope permissions.", classes="help-text")
 
-            with Horizontal(classes="field-group btn-group"):
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("Stripe API (Payments)", classes="skill-name")
+                        yield Switch(value=stripe_enabled, id="stripe_switch")
+                    yield Label("Allow the agent to autonomously process charges, create payment links, and manage customers.", classes="description")
+                    yield Label("Stripe Secret Key:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new secret key (sk_...) to update", password=True, id="stripe_key", classes="api-key-input")
+                    yield Label("Warning: The agent can spend real money with this enabled.", classes="help-text")
+
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("Discord Bot", classes="skill-name")
+                        yield Switch(value=discord_enabled, id="discord_switch")
+                    yield Label("Send messages, manage channels, and interact with Discord servers.", classes="description")
+                    yield Label("Bot Token:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new bot token to update", password=True, id="discord_token", classes="api-key-input")
+                    yield Label("Create a bot at discord.com/developers/applications.", classes="help-text")
+
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("Telegram Bot Gateway", classes="skill-name")
+                        yield Switch(value=tg_enabled, id="telegram_switch")
+                    yield Label("Chat with your agent remotely via Telegram.", classes="description")
+                    yield Label("Bot Token:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new token to update", password=True, id="telegram_token", classes="api-key-input")
+                    yield Label("Allowed User ID:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new ID to update", id="telegram_user_id", classes="api-key-input")
+                    yield Label("Required for security. Get yours from @userinfobot.", classes="help-text")
+
+            with Horizontal(classes="btn-group"):
                 yield Button("Save & Close", variant="primary", id="save_skills_btn")
                 yield Button("Cancel", variant="error", id="cancel_skills_btn")
 
@@ -504,6 +560,12 @@ class SkillsScreen(ModalScreen):
         ow_enabled = self.query_one("#openweather_switch").value
         ow_key = self.query_one("#openweather_key").value
         browser_enabled = self.query_one("#browser_switch").value
+        gh_enabled = self.query_one("#github_switch").value
+        gh_token = self.query_one("#github_token").value
+        stripe_enabled = self.query_one("#stripe_switch").value
+        stripe_key = self.query_one("#stripe_key").value
+        discord_enabled = self.query_one("#discord_switch").value
+        discord_token = self.query_one("#discord_token").value
         tg_enabled = self.query_one("#telegram_switch").value
         tg_token = self.query_one("#telegram_token").value
         tg_user_id = self.query_one("#telegram_user_id").value
@@ -527,6 +589,24 @@ class SkillsScreen(ModalScreen):
         browser_data = config_data["skills"].get("browser", {})
         browser_data["enabled"] = browser_enabled
         config_data["skills"]["browser"] = browser_data
+
+        gh_data = config_data["skills"].get("github", {})
+        gh_data["enabled"] = gh_enabled
+        if gh_token:
+            gh_data["api_key"] = gh_token
+        config_data["skills"]["github"] = gh_data
+
+        stripe_data = config_data["skills"].get("stripe", {})
+        stripe_data["enabled"] = stripe_enabled
+        if stripe_key:
+            stripe_data["api_key"] = stripe_key
+        config_data["skills"]["stripe"] = stripe_data
+
+        discord_data = config_data["skills"].get("discord", {})
+        discord_data["enabled"] = discord_enabled
+        if discord_token:
+            discord_data["bot_token"] = discord_token
+        config_data["skills"]["discord"] = discord_data
 
         tg_data = config_data["skills"].get("telegram", {})
         tg_data["enabled"] = tg_enabled
@@ -729,6 +809,7 @@ class AgentInterface(App):
         Binding("ctrl+l", "clear_chat", "Clear Chat", show=True),
         Binding("ctrl+r", "restart_session", "Restart", show=True),
         Binding("ctrl+x", "stop_agent", "Stop Agent", show=True),
+        Binding("ctrl+s", "stop_agent", "Stop (Alt)", show=False),
         Binding("escape", "dismiss_modal", "Dismiss", show=False),
     ]
 
@@ -916,7 +997,8 @@ class AgentInterface(App):
         yield Footer()
 
     def on_mount(self):
-        self.messages: list = []
+        self.messages: list = load_chat_history()
+        self._msg_count = len([m for m in self.messages if getattr(m, 'type', '') in ['human', 'ai']])
         self._agent_worker: Worker | None = None
         self._thinking_widget: ThinkingIndicator | None = None
         self._msg_count = 0
@@ -924,6 +1006,16 @@ class AgentInterface(App):
         self.update_status_bar()
         self.set_interval(60, self.scheduled_heartbeat)
         self.scheduled_heartbeat()
+        
+        # Mount existing chat history
+        chat_history_widget = self.query_one("#chat-history")
+        for msg in self.messages:
+            role = "user" if msg.type == "human" else "agent" if msg.type == "ai" else "system"
+            if role in ["user", "agent"] and msg.content and isinstance(msg.content, str) and msg.content.strip():
+                 chat_history_widget.mount(ChatMessage(msg.content, role))
+        
+        # Auto-focus the input box
+        self.query_one("#chat_input").focus()
 
     # ── Status Bar ─────────────────────────────────────────────────────────
 
@@ -991,6 +1083,10 @@ class AgentInterface(App):
             self.push_screen(TasksScreen(), self.on_config_closed)
             return
 
+        if user_input.lower() == "/stop":
+            self.action_stop_agent()
+            return
+
         # Display user message
         chat_history = self.query_one("#chat-history")
         chat_history.mount(ChatMessage(user_input, "user"))
@@ -999,7 +1095,7 @@ class AgentInterface(App):
         self.update_status_bar()
 
         # Start agent processing
-        self.process_agent_response(user_input)
+        self._agent_worker = self.process_agent_response(user_input)
 
     def on_config_closed(self, result):
         if result:
@@ -1032,6 +1128,9 @@ class AgentInterface(App):
             self._msg_count += 1
             self.update_status_bar()
             self._display_agent_message(response_text)
+            
+            # Persist chat history
+            save_chat_history(self.messages)
 
         except asyncio.CancelledError:
             self._hide_thinking()
@@ -1088,17 +1187,12 @@ class AgentInterface(App):
     # ── Actions (bound to keys + buttons) ──────────────────────────────────
 
     def action_stop_agent(self) -> None:
-        """Stop the currently running agent response."""
-        workers = self.workers
-        stopped = False
-        for worker in workers:
-            if worker.group == "agent" and not worker.is_cancelled:
-                worker.cancel()
-                stopped = True
-
-        if stopped:
+        """Stop the currently running agent response directly via stored worker."""
+        if self._agent_worker and not self._agent_worker.is_cancelled and not self._agent_worker.is_finished:
+            self._agent_worker.cancel()
             self._hide_thinking()
             self._display_system_message("Agent stopped.")
+            self._agent_worker = None
         else:
             self.notify("No active agent response to stop.", severity="warning")
 
@@ -1116,6 +1210,11 @@ class AgentInterface(App):
 
         # Reset state
         self.messages = []
+        if os.path.exists(CHAT_HISTORY_FILE):
+             try:
+                 os.remove(CHAT_HISTORY_FILE)
+             except: pass
+             
         self._msg_count = 0
 
         # Clear and reset UI

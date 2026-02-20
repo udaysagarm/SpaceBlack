@@ -6,7 +6,7 @@ import datetime
 import json
 import time
 from typing import TypedDict, Annotated, List, Union
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, messages_from_dict, messages_to_dict
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
@@ -45,6 +45,28 @@ from brain.memory_manager import (
 HEARTBEAT_STATE_FILE = os.path.join(BRAIN_DIR, "memory", "heartbeat-state.json")
 
 # ... (existing functions: load_config, read_file_safe, build_system_prompt)
+
+CHAT_HISTORY_FILE = os.path.join(BRAIN_DIR, "chat_history.json")
+
+def load_chat_history() -> List[BaseMessage]:
+    """Loads the serialized chat history from JSON."""
+    if os.path.exists(CHAT_HISTORY_FILE):
+        try:
+            with open(CHAT_HISTORY_FILE, "r") as f:
+                data = json.load(f)
+            return messages_from_dict(data)
+        except Exception as e:
+            print(f"Warning: Failed to load chat history: {e}")
+    return []
+
+def save_chat_history(messages: List[BaseMessage]) -> None:
+    """Serializes and saves the chat history to JSON."""
+    try:
+        data = messages_to_dict(messages)
+        with open(CHAT_HISTORY_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Warning: Failed to save chat history: {e}")
 
 def parse_recurrence(recurrence: str) -> datetime.timedelta:
     """
@@ -229,6 +251,12 @@ from tools.skills.openweather import get_current_weather
 from tools.skills.openweather import get_current_weather
 # OpenClaw-style unified browser tool
 from tools.skills.browser.browser import browser_act
+# GitHub autonomous actions
+from tools.skills.github.github import github_act
+# Stripe autonomous payments
+from tools.skills.stripe.stripe_api import stripe_act
+# Discord bot actions
+from tools.skills.discord.discord_api import discord_act
 # Use Vault Tools
 from tools.vault import get_secret, set_secret, list_secrets
 from tools.files import read_file, write_file, list_directory
@@ -314,6 +342,18 @@ def run_agent(state: AgentState):
         # OpenClaw-style unified browser tool
         tools.append(browser_act)
 
+    if skills_config.get("github", {}).get("enabled", False):
+        # GitHub action module
+        tools.append(github_act)
+
+    if skills_config.get("stripe", {}).get("enabled", False):
+        # Stripe payment module
+        tools.append(stripe_act)
+
+    if skills_config.get("discord", {}).get("enabled", False):
+        # Discord bot module
+        tools.append(discord_act)
+
     # File tools are always available
     tools.extend([read_file, write_file, list_directory])
     
@@ -386,7 +426,7 @@ def build_graph():
     tools = [
         reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, 
         schedule_task, cancel_task, web_search, get_current_weather, 
-        browser_act,
+        browser_act, github_act, stripe_act, discord_act,
         get_secret, set_secret, list_secrets,
         read_file, write_file, list_directory, 
         exit_conversation, send_telegram_message
