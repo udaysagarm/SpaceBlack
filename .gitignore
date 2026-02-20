@@ -22,6 +22,7 @@ brain/BOOTSTRAP.md
 brain/memory_*.md
 brain/vault/
 memory/
+# Google OAuth token is stored as brain/google_token.json (covered by brain/*.json)
 
 # Keep instructions (AGENTS.md, TOOLS.md, IDENTITY.md, HEARTBEAT.md)
 # If you want to share custom instructions, commit them.

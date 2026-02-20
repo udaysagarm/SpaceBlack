@@ -488,6 +488,13 @@ class SkillsScreen(ModalScreen):
         telegram_cfg = skills_config.get("telegram", {})
         tg_enabled = telegram_cfg.get("enabled", False)
 
+        google_cfg = skills_config.get("google", {})
+        google_enabled = google_cfg.get("enabled", False)
+
+        import platform
+        macos_cfg = skills_config.get("macos", {})
+        macos_enabled = macos_cfg.get("enabled", False) and platform.system() == "Darwin"
+
         with Container(id="skills-dialog"):
             yield Label("Agent Skills Manager", classes="config-title")
 
@@ -544,6 +551,27 @@ class SkillsScreen(ModalScreen):
                     yield Label("Allowed User ID:", classes="api-key-label")
                     yield Input(value="", placeholder="(Hidden) - Enter new ID to update", id="telegram_user_id", classes="api-key-input")
                     yield Label("Required for security. Get yours from @userinfobot.", classes="help-text")
+
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("Google Workspace (Gmail, Drive, Docs, Sheets, Calendar)", classes="skill-name")
+                        yield Switch(value=google_enabled, id="google_switch")
+                    yield Label("Manage Gmail, Drive files, Docs, Sheets, and Calendar events.", classes="description")
+                    yield Label("credentials.json Content (recommended):", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Paste entire credentials.json contents here", password=True, id="google_credentials_json", classes="api-key-input")
+                    yield Label("OR enter manually:", classes="help-text")
+                    yield Label("OAuth2 Client ID:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter Client ID", password=True, id="google_client_id", classes="api-key-input")
+                    yield Label("OAuth2 Client Secret:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter Client Secret", password=True, id="google_client_secret", classes="api-key-input")
+                    yield Label("Get credentials at console.cloud.google.com/apis/credentials", classes="help-text")
+
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("macOS Native Control", classes="skill-name")
+                        yield Switch(value=macos_enabled, id="macos_switch")
+                    yield Label("Control Apple Mail, Calendar, Notes, Finder, Reminders, and system apps.", classes="description")
+                    yield Label("Only available on macOS. Uses AppleScript.", classes="help-text")
 
             with Horizontal(classes="btn-group"):
                 yield Button("Save & Close", variant="primary", id="save_skills_btn")
@@ -615,6 +643,25 @@ class SkillsScreen(ModalScreen):
         if tg_user_id:
              tg_data["allowed_user_id"] = tg_user_id
         config_data["skills"]["telegram"] = tg_data
+
+        google_enabled = self.query_one("#google_switch").value
+        google_credentials_json = self.query_one("#google_credentials_json").value
+        google_client_id = self.query_one("#google_client_id").value
+        google_client_secret = self.query_one("#google_client_secret").value
+        google_data = config_data["skills"].get("google", {})
+        google_data["enabled"] = google_enabled
+        if google_credentials_json:
+            google_data["credentials_json"] = google_credentials_json
+        if google_client_id:
+            google_data["client_id"] = google_client_id
+        if google_client_secret:
+            google_data["client_secret"] = google_client_secret
+        config_data["skills"]["google"] = google_data
+
+        macos_enabled = self.query_one("#macos_switch").value
+        macos_data = config_data["skills"].get("macos", {})
+        macos_data["enabled"] = macos_enabled
+        config_data["skills"]["macos"] = macos_data
 
         try:
              with open(CONFIG_FILE, "w") as f:

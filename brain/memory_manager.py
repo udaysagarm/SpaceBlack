@@ -393,6 +393,9 @@ def build_system_prompt() -> str:
 
     [USER]
     {user_content}
+
+    [TOOLS]
+    {tools_content}
     """
     return prompt.strip()
 

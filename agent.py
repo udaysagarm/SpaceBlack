@@ -261,8 +261,16 @@ from tools.skills.discord.discord_api import discord_act
 from tools.vault import get_secret, set_secret, list_secrets
 from tools.files import read_file, write_file, list_directory
 from tools.skills.telegram.send_message import send_telegram_message
-
-
+# Google Workspace tools
+from tools.skills.google.gmail import gmail_act
+from tools.skills.google.drive import drive_act
+from tools.skills.google.docs import docs_act
+from tools.skills.google.sheets import sheets_act
+from tools.skills.google.calendar import calendar_act
+# macOS native control
+import platform
+if platform.system() == "Darwin":
+    from tools.skills.macos.macos_control import macos_act
 
 
 # --- Graph ---
@@ -363,6 +371,12 @@ def run_agent(state: AgentState):
     # Telegram tool
     tools.append(send_telegram_message)
 
+    if skills_config.get("google", {}).get("enabled", False):
+        tools.extend([gmail_act, drive_act, docs_act, sheets_act, calendar_act])
+
+    if skills_config.get("macos", {}).get("enabled", False) and platform.system() == "Darwin":
+        tools.append(macos_act)
+
     llm_with_tools = llm.bind_tools(tools)
 
     response = llm_with_tools.invoke(messages)
@@ -429,8 +443,12 @@ def build_graph():
         browser_act, github_act, stripe_act, discord_act,
         get_secret, set_secret, list_secrets,
         read_file, write_file, list_directory, 
-        exit_conversation, send_telegram_message
+        exit_conversation, send_telegram_message,
+        gmail_act, drive_act, docs_act, sheets_act, calendar_act,
     ]
+    # Add macOS tool only on macOS
+    if platform.system() == "Darwin":
+        tools.append(macos_act)
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
 

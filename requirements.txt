@@ -16,3 +16,8 @@ discord.py
 playwright
 beautifulsoup4
 html2text
+
+# Google Workspace
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
