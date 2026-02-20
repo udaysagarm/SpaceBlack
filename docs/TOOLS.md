@@ -3,10 +3,10 @@
 **Space Black** provides these tools to **Ghost** (the agent). Ghost uses them autonomously to complete your requests.
 
 ### 🔐 Vault (Secure Storage)
-Manage sensitive credentials (API keys, passwords) securely.
-*   `get_secret(key)`: Retrieve a secret.
-*   `set_secret(key, value)`: Save a secret (local only, git-ignored).
-*   `list_secrets()`: See what keys are available.
+Manage sensitive credentials, user specifics, and background data securely.
+*   `get_secret(key)`: Retrieve a securely stored string.
+*   `set_secret(key, value)`: Save a string (local only, git-ignored). Useful for persistent tokens or long-term private configs.
+*   `list_secrets()`: See what keys are currently stored in the Vault.
 
 ### 🌐 Autonomous Web Browsing
 Space Black gives Ghost a full headless browser to interact with the web.
@@ -41,12 +41,17 @@ Updates your user profile.
 -   **Usage**: Learning about you (name, tech stack, preferences).
 -   **Storage**: `brain/USER.md`.
 
-## Scheduler Tools
+## Scheduler Tools (Cron Jobs)
+Space Black runs a background daemon that constantly checks for due tasks.
 
 ### `schedule_task`
-Adds a task to the execution queue.
+Adds a task to the execution queue (acts as a cron job or scheduled reminder).
+-   **Usage**: Can define absolute times (`2026-10-10 14:00`) or relative recurrences (`daily`, `1h`, `30m`). When the task executes, the Daemon routes it to Ghost natively.
 -   **Storage**: Updates `brain/SCHEDULE.json`.
--   **Mechanism**: The Space Black daemon checks this file every minute.
+
+### `cancel_task`
+Removes a pending task from the queue.
+-   **Usage**: Passing the exact task summary or ID to stop a recurring background job.
 
 ## Search Tools
 
@@ -83,3 +88,10 @@ When the Google skill is enabled via standard OAuth2, Ghost gains access to the 
 ### macOS Native Control
 When running on macOS (with the skill enabled), Ghost can control local applications via AppleScript using a single endpoint:
 *   `macos_act(action, ...)`: Controls Apple Mail, Calendar, Notes, Reminders, Finder, and System state. Handle operations locally without web APIs.
+
+### Developer & Service APIs
+*   `github_act(action, ...)`: Direct control over GitHub via API. Can read repos, manage issues, create branches, and directly manipulate code files.
+*   `stripe_act(action, ...)`: Secure gateway to the Stripe API. Check accounts, list invoices, manage customers, and generate checkout sessions.
+*   `discord_act(action, ...)`: Background Discord bot controller. Can send messages, list guild members, read channels, and manage DMs.
+*   `get_current_weather(location)`: Fetches real-time weather from OpenWeather.
+*   `send_telegram_message(message)`: Broadcasts a message to the user via the Telegram Gateway.

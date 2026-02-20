@@ -89,6 +89,58 @@ Access and control Apple-native applications running locally on your Mac using s
     - "Create an Apple Note with my grocery list."
     - "Empty my Mac's trash and set my volume to 50%."
 
-## 6. Spotify (Planned)
+## 6. Discord Bot
+Run a background Discord bot that you can interact with, and allow Ghost to read channels, send DMs, add emojis, and manage the server.
+
+- **Status**: ✅ Implemented
+- **Config**: Configurable via the Terminal UI (Settings -> Skills).
+```json
+"skills": {
+    "discord": {
+        "enabled": true,
+        "bot_token": "YOUR_DISCORD_BOT_TOKEN"
+    }
+}
+```
+- **Usage**:
+    - "Summarize the last 25 messages in the general channel."
+    - "Send a DM to Bob telling him the deployment is done."
+
+## 7. GitHub Integrations
+Control repositories, issues, branches, and code files directly using GitHub's developer APIs.
+
+- **Status**: ✅ Implemented
+- **Config**: Configurable via the Terminal UI (Settings -> Skills).
+```json
+"skills": {
+    "github": {
+        "enabled": true,
+        "api_key": "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
+    }
+}
+```
+- **Usage**:
+    - "Check if there are any open issues in `owner/repo`."
+    - "Create a new branch off main and commit this typo fix to the `README.md`."
+
+## 8. Stripe Billing
+Manage customers, check balances, list prices, and create checkout sessions securely using the Stripe API.
+
+- **Status**: ✅ Implemented
+- **Config**: Configurable via the Terminal UI (Settings -> Skills). *(Note: Never share your Secret Key externally.)*
+```json
+"skills": {
+    "stripe": {
+        "enabled": true,
+        "api_key": "sk_test_..."
+    }
+}
+```
+- **Usage**:
+    - "Check my Stripe balance."
+    - "Generate a checkout session link for the 'Premium' tier price."
+    - "Create a new customer named Alice."
+
+## 9. Spotify (Planned)
 Control music playback.
 - **Status**: 🚧 Coming Soon
