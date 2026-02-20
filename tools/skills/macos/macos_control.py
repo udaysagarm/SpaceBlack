@@ -146,13 +146,21 @@ def macos_act(
             account_filter = f'of account "{account}"' if account else ""
             script = f'''
             tell application "Mail"
-                set msgs to messages of mailbox "INBOX" {account_filter}
-                set output to ""
-                repeat with i from 1 to (minimum of {{{n}, count of msgs}})
-                    set m to item i of msgs
-                    set output to output & i & ". From: " & (sender of m) & " | Subject: " & (subject of m) & " | Date: " & (date received of m as string) & linefeed
-                end repeat
-                return output
+                try
+                    set msgs to messages of inbox {account_filter}
+                    set output to ""
+                    set msgCount to count of msgs
+                    set limit to {n}
+                    if msgCount < limit then set limit to msgCount
+                    repeat with i from 1 to limit
+                        set m to item i of msgs
+                        set output to output & i & ". From: " & (sender of m) & " | Subject: " & (subject of m) & " | Date: " & (date received of m as string) & linefeed
+                    end repeat
+                    if output is "" then return "No recent emails."
+                    return output
+                on error errMsg
+                    return "AppleScript Error: " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -161,10 +169,15 @@ def macos_act(
             if message_index is None:
                 return "Error: Missing 'message_index'"
             account_filter = f'of account "{account}"' if account else ""
+            mailbox_target = f'mailbox "{mailbox}"' if mailbox and mailbox.upper() != "INBOX" else "inbox"
             script = f'''
             tell application "Mail"
-                set m to message {message_index} of mailbox "{mailbox}" {account_filter}
-                return "From: " & (sender of m) & linefeed & "Subject: " & (subject of m) & linefeed & "Date: " & (date received of m as string) & linefeed & linefeed & (content of m)
+                try
+                    set m to message {message_index} of {mailbox_target} {account_filter}
+                    return "From: " & (sender of m) & linefeed & "Subject: " & (subject of m) & linefeed & "Date: " & (date received of m as string) & linefeed & linefeed & (content of m)
+                on error errMsg
+                    return "AppleScript Error (Message may not exist): " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -172,13 +185,18 @@ def macos_act(
         elif action == "mail_reply":
             if message_index is None or not body:
                 return "Error: Missing 'message_index' or 'body'"
-            escaped_body = body.replace('"', '\\"')
+            escaped_body = body.replace('"', '\\"').replace('\n', '\\n')
             script = f'''
             tell application "Mail"
-                set m to message {message_index} of mailbox "INBOX"
-                set replyMsg to reply m with opening window
-                set content of replyMsg to "{escaped_body}" & linefeed & linefeed & (content of replyMsg)
-                send replyMsg
+                try
+                    set m to message {message_index} of inbox
+                    set replyMsg to reply m with opening window
+                    set content of replyMsg to "{escaped_body}" & linefeed & linefeed & (content of replyMsg)
+                    send replyMsg
+                    return "Reply sent successfully."
+                on error errMsg
+                    return "AppleScript Error: " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -195,15 +213,19 @@ def macos_act(
             cal_filter = f'calendar "{calendar_name}"' if calendar_name else "every calendar"
             script = f'''
             tell application "Calendar"
-                set today to current date
-                set tomorrow to today + 1 * days
-                set output to ""
-                set allEvents to every event of {cal_filter} whose start date >= today and start date < tomorrow
-                repeat with e in allEvents
-                    set output to output & (summary of e) & " | Start: " & (start date of e as string) & " | End: " & (end date of e as string) & linefeed
-                end repeat
-                if output is "" then return "No events today."
-                return output
+                try
+                    set today to current date
+                    set tomorrow to today + 1 * days
+                    set output to ""
+                    set allEvents to every event of {cal_filter} whose start date >= today and start date < tomorrow
+                    repeat with e in allEvents
+                        set output to output & (summary of e) & " | Start: " & (start date of e as string) & " | End: " & (end date of e as string) & linefeed
+                    end repeat
+                    if output is "" then return "No events today."
+                    return output
+                on error errMsg
+                    return "AppleScript Error (Check Calendar name/permissions): " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -215,9 +237,14 @@ def macos_act(
             loc_prop = f', location:"{location}"' if location else ""
             script = f'''
             tell application "Calendar"
-                tell {cal_target}
-                    make new event with properties {{summary:"{event_summary}", start date:date "{start_date}", end date:date "{end_date}"{loc_prop}}}
-                end tell
+                try
+                    tell {cal_target}
+                        make new event with properties {{summary:"{event_summary}", start date:date "{start_date}", end date:date "{end_date}"{loc_prop}}}
+                    end tell
+                    return "Event created successfully."
+                on error errMsg
+                    return "AppleScript Error: " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -227,12 +254,19 @@ def macos_act(
                 return "Error: Missing 'event_summary'"
             script = f'''
             tell application "Calendar"
-                repeat with c in every calendar
-                    set matchingEvents to (every event of c whose summary is "{event_summary}")
-                    repeat with e in matchingEvents
-                        delete e
+                try
+                    set deletedCount to 0
+                    repeat with c in every calendar
+                        set matchingEvents to (every event of c whose summary is "{event_summary}")
+                        repeat with e in matchingEvents
+                            delete e
+                            set deletedCount to deletedCount + 1
+                        end repeat
                     end repeat
-                end repeat
+                    return "Deleted " & deletedCount & " events."
+                on error errMsg
+                    return "AppleScript Error: " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -272,7 +306,12 @@ def macos_act(
                 return "Error: Missing 'path'"
             script = f'''
             tell application "Finder"
-                move POSIX file "{path}" to trash
+                try
+                    move POSIX file "{path}" to trash
+                    return "Moved to trash successfully."
+                on error errMsg
+                    return "AppleScript Error (Ensure path exists/permissions): " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -300,13 +339,21 @@ def macos_act(
             folder_filter = f'of folder "{folder}"' if folder else ""
             script = f'''
             tell application "Notes"
-                set output to ""
-                set noteList to notes {folder_filter}
-                repeat with i from 1 to (minimum of {{{n}, count of noteList}})
-                    set n to item i of noteList
-                    set output to output & i & ". " & (name of n) & " | Modified: " & (modification date of n as string) & linefeed
-                end repeat
-                return output
+                try
+                    set output to ""
+                    set noteList to notes {folder_filter}
+                    set noteCount to count of noteList
+                    set limit to {n}
+                    if noteCount < limit then set limit to noteCount
+                    repeat with i from 1 to limit
+                        set n_item to item i of noteList
+                        set output to output & i & ". " & (name of n_item) & " | Modified: " & (modification date of n_item as string) & linefeed
+                    end repeat
+                    if output is "" then return "No notes found."
+                    return output
+                on error errMsg
+                    return "AppleScript Error (Check folder name/permissions): " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)
@@ -377,15 +424,25 @@ def macos_act(
             list_filter = f'list "{reminder_list}"' if reminder_list else "default list"
             script = f'''
             tell application "Reminders"
-                set output to ""
-                set rList to reminders of {list_filter}
-                repeat with r in rList
-                    if not (completed of r) then
-                        set output to output & (name of r) & " | Due: " & (due date of r as string) & linefeed
-                    end if
-                end repeat
-                if output is "" then return "No active reminders."
-                return output
+                try
+                    set output to ""
+                    set rList to reminders of {list_filter}
+                    repeat with r in rList
+                        if not (completed of r) then
+                            set d to due date of r
+                            if d is missing value then
+                                set dueStr to "None"
+                            else
+                                set dueStr to (d as string)
+                            end if
+                            set output to output & (name of r) & " | Due: " & dueStr & linefeed
+                        end if
+                    end repeat
+                    if output is "" then return "No active reminders."
+                    return output
+                on error errMsg
+                    return "AppleScript Error: " & errMsg
+                end try
             end tell
             '''
             return _run_applescript(script)

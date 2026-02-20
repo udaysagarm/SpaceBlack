@@ -41,6 +41,8 @@ Run `./spaceblack daemon` to let Ghost work in the background. It checks for sch
 
 ### 🛠️ Modular Skills
 Extend Ghost's capabilities with skills defined in `config.json`:
+- **Google Workspace**: Gmail, Calendar, Drive, Docs, and Sheets integration via local OAuth.
+- **macOS Control**: Deep integration with Apple Mail, Notes, Reminders, Finder, and Calendar via native AppleScript (macOS only).
 - **Telegram**: Chat with Ghost from your phone.
 - **Weather**: Real-time forecasts.
 - **Browser**: Full web access.

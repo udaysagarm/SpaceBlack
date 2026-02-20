@@ -31,6 +31,13 @@ def save_config(provider, model_name, api_key, brave_key):
                 "enabled": False,
                 "bot_token": "",
                 "allowed_user_id": ""
+            },
+            "google": {
+                "enabled": False,
+                "credentials_json": ""
+            },
+            "macos": {
+                "enabled": True
             }
         }
     }

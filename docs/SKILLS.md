@@ -46,6 +46,49 @@ Fetch real-time weather data.
 ```
 - **Usage**: "What's the weather in Tokyo?"
 
-## 4. Spotify (Planned)
+## 4. Google Workspace
+Integrate deeply with Gmail, Google Calendar, Google Drive, Google Docs, and Google Sheets natively via OAuth2 consent.
+
+- **Status**: ✅ Implemented
+- **Config**: Configurable via the Terminal UI (Settings -> Skills).
+```json
+"skills": {
+    "google": {
+        "enabled": true,
+        "client_id": "YOUR_OAUTH_CLIENT_ID",
+        "client_secret": "YOUR_OAUTH_CLIENT_SECRET"
+    }
+}
+```
+- **Usage**:
+    - "Read my latest emails."
+    - "Search my Google Drive for the budget spreadsheet and read it."
+    - "Draft an email to John and create a calendar event for tomorrow at 2 PM."
+
+## 5. macOS Native Control
+Access and control Apple-native applications running locally on your Mac using secure AppleScript execution.
+
+- **Status**: ✅ Implemented (macOS only)
+- **Config**: Auto-detected on macOS via the Terminal UI.
+```json
+"skills": {
+    "macos": {
+        "enabled": true
+    }
+}
+```
+- **Capabilities**:
+    - **Apple Mail**: Send, read, reply to, and search emails.
+    - **Apple Calendar**: Create, delete, and list events.
+    - **Apple Notes**: Read, create, delete, and search local notes.
+    - **Apple Reminders**: List, create, complete, and delete reminders.
+    - **Finder**: Move, copy, delete, and list files.
+    - **System**: Control volume, brightness, clipboard, and application states.
+- **Usage**:
+    - "Read my unread Apple Mail."
+    - "Create an Apple Note with my grocery list."
+    - "Empty my Mac's trash and set my volume to 50%."
+
+## 6. Spotify (Planned)
 Control music playback.
 - **Status**: 🚧 Coming Soon

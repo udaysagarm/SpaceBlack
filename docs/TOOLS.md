@@ -69,3 +69,17 @@ Ghost has safe, direct access to the local file system.
 
 ### `list_directory`
 -   **Description**: Lists files in a folder.
+
+## Integration Tools
+
+### Google Workspace
+When the Google skill is enabled via standard OAuth2, Ghost gains access to the following `@tool` endpoints:
+*   `gmail_act(action, ...)`: Send, read, search, and manage emails.
+*   `calendar_act(action, ...)`: Create, list, delete, and check calendar events.
+*   `drive_act(action, ...)`: Upload, download, move, share, and list Drive files.
+*   `docs_act(action, ...)`: Create, append, and read Google Docs.
+*   `sheets_act(action, ...)`: Create, read, and write cell ranges to Google Sheets.
+
+### macOS Native Control
+When running on macOS (with the skill enabled), Ghost can control local applications via AppleScript using a single endpoint:
+*   `macos_act(action, ...)`: Controls Apple Mail, Calendar, Notes, Reminders, Finder, and System state. Handle operations locally without web APIs.

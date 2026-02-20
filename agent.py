@@ -62,7 +62,27 @@ def load_chat_history() -> List[BaseMessage]:
 def save_chat_history(messages: List[BaseMessage]) -> None:
     """Serializes and saves the chat history to JSON."""
     try:
-        data = messages_to_dict(messages)
+        from langchain_core.messages import ToolMessage, AIMessage
+        
+        # Filter out massive tool responses to save space
+        lean_messages = []
+        for msg in messages:
+            if isinstance(msg, ToolMessage):
+                continue
+            
+            # If it's an AI message, clone it without the raw tool_calls metadata 
+            # so the JSON doesn't bloat with base64 images or massive args
+            if isinstance(msg, AIMessage):
+                clean_msg = AIMessage(content=msg.content)
+                lean_messages.append(clean_msg)
+            else:
+                lean_messages.append(msg)
+
+        # Prevent infinite history bloat by keeping only the last 100 messages
+        if len(lean_messages) > 100:
+            lean_messages = lean_messages[-100:]
+            
+        data = messages_to_dict(lean_messages)
         with open(CHAT_HISTORY_FILE, "w") as f:
             json.dump(data, f, indent=4)
     except Exception as e:

@@ -37,13 +37,18 @@ Ghost can surf the web for you.
 - "Read the documentation for LangGraph and summarize the core concepts."
 See [**Browsing Guide**](docs/BROWSING.md) for details.
 
-### 3. Task Scheduling
+### 4. Native App & Workspace Integrations
+Ghost can control your local apps and cloud workspace.
+- **macOS Control**: "Read my latest unread Apple Mail" or "Empty my Mac's trash."
+- **Google Workspace**: "Create a Google Calendar event for our meeting tomorrow at 3 PM and email John the agenda."
+
+### 5. Task Scheduling
 Tell Ghost to do things in the future.
 - "Remind me to check server logs in 20 minutes."
 - "Every morning at 9am, check the weather."
 - **Manage Tasks:** Type `/tasks` to see pending jobs.
 
-### 4. Memory System
+### 6. Memory System
 Ghost has a persistent memory.
 - **Short-term**: Remembers the current conversation.
 - **Long-term**: Stores facts in `brain/MEMORY.md`.

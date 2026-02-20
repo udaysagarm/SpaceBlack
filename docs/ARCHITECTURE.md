@@ -33,6 +33,7 @@ b. **Daemon (`daemon.py`)**:
 ### 4. Tool System (`tools/`)
 The capabilities Space Black provides to Ghost.
 - **Native Tools**: File I/O, System info.
+- **Platform Integrations**: Google Workspace (OAuth2 docs, drive, mail), macOS Native Control (AppleScript).
 - **Skills**: Modular integrations (Weather, Telegram).
 - **Browser Engine**: The autonomous browsing capability.
 
