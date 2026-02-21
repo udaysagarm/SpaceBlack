@@ -19,10 +19,11 @@ This file lists the capabilities currently enabled for your Ghost Agent.
 -   **Telegram Gateway**: (If telegram bot configured/enabled) I can interact with you remotely via a Telegram bot.
 -   **web_search**: I can search the internet for general information. (Do NOT use for specific URLs).
 -   **visit_page**: (Headless Browser) I can visit and "read" specific URLs ("http://...", "example.com") directly. Use this for "lookup [url]" or "check [url]".
--   **Google Workspace**: (If configured) I can manage Gmail, export/read Google Docs & Sheets, upload/share Google Drive files, and manage Calendar events using `gmail_act`, `drive_act`, `docs_act`, `sheets_act`, and `calendar_act`.
+-   **Google Workspace**: (If configured) I can manage Gmail, export/read Google Docs & Sheets, upload/share Google Drive files, manage Calendar events, and handle Google Wallet passes using `gmail_act`, `drive_act`, `docs_act`, `sheets_act`, `calendar_act`, and `wallet_act`.
 -   **macOS Control**: (If on Mac) I can control Apple Mail, Calendar, Notes, Reminders, Finder, and system UI natively using `macos_act`.
 -   **GitHub Actions**: (If configured) I can manage repositories, issues, and commit code using `github_act`.
 -   **Discord Bot**: (If configured) I can interact with Discord channels and servers using `discord_act`.
+-   **PayPal Api**: (If configured) I can retrieve balances, output payouts, and generate invoices using `paypal_act`.
 
 ## File System (Native)
 -   **read_file**: I can read the content of text files directly (faster/safer than `cat`).

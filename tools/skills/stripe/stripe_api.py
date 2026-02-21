@@ -4,6 +4,7 @@ Provides `stripe_act` to manage customers, balances, and payments securely.
 """
 import os
 import requests
+import sys
 from typing import Optional
 from langchain_core.tools import tool
 
@@ -98,6 +99,20 @@ def stripe_act(
 
         elif action == "create_payment_intent":
             if not amount or not currency: return "Error: Missing 'amount' (cents) or 'currency'."
+
+            print("\n" + "="*50)
+            print("🚨 CRITICAL ALERT: AI INITIATED PAYMENT INTENT 🚨")
+            print(f"Action: Create Stripe Payment Intent")
+            print(f"Customer ID: {customer_id or 'Guest'}")
+            print(f"Amount: {amount} {currency.upper()} (in cents)")
+            print("="*50)
+            print("Do you authorize this transaction? Type 'yes' to proceed, or any other key to cancel: ", end="")
+            sys.stdout.flush()
+            user_input = sys.stdin.readline().strip().lower()
+
+            if user_input != 'yes':
+                return "Payment Intent creation cancelled by human user. Aborted."
+
             data = {"amount": amount, "currency": currency.lower()}
             if customer_id: data["customer"] = customer_id
             resp = requests.post(f"{STRIPE_API_BASE}/payment_intents", auth=auth, data=data)
@@ -106,6 +121,20 @@ def stripe_act(
         elif action == "create_charge":
             if not amount or not currency or not customer_id: 
                 return "Error: Missing 'amount' (cents), 'currency', or 'customer_id'."
+
+            print("\n" + "="*50)
+            print("🚨 CRITICAL ALERT: AI INITIATED DIRECT STRIPE CHARGE 🚨")
+            print(f"Action: Direct Stripe Charge")
+            print(f"Customer ID: {customer_id}")
+            print(f"Amount: {amount} {currency.upper()} (in cents)")
+            print("="*50)
+            print("Do you authorize this transaction? Type 'yes' to proceed, or any other key to cancel: ", end="")
+            sys.stdout.flush()
+            user_input = sys.stdin.readline().strip().lower()
+
+            if user_input != 'yes':
+                return "Direct Charge cancelled by human user. Aborted."
+
             data = {"amount": amount, "currency": currency.lower(), "customer": customer_id}
             resp = requests.post(f"{STRIPE_API_BASE}/charges", auth=auth, data=data)
             return _handle_response(resp)

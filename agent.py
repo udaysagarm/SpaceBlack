@@ -287,6 +287,9 @@ from tools.skills.google.drive import drive_act
 from tools.skills.google.docs import docs_act
 from tools.skills.google.sheets import sheets_act
 from tools.skills.google.calendar import calendar_act
+from tools.skills.google.wallet import wallet_act
+# PayPal tool
+from tools.skills.paypal.paypal_api import paypal_act
 # macOS native control
 import platform
 if platform.system() == "Darwin":
@@ -392,10 +395,13 @@ def run_agent(state: AgentState):
     tools.append(send_telegram_message)
 
     if skills_config.get("google", {}).get("enabled", False):
-        tools.extend([gmail_act, drive_act, docs_act, sheets_act, calendar_act])
+        tools.extend([gmail_act, drive_act, docs_act, sheets_act, calendar_act, wallet_act])
 
     if skills_config.get("macos", {}).get("enabled", False) and platform.system() == "Darwin":
         tools.append(macos_act)
+
+    if skills_config.get("paypal", {}).get("enabled", False):
+        tools.append(paypal_act)
 
     llm_with_tools = llm.bind_tools(tools)
 
@@ -464,7 +470,8 @@ def build_graph():
         get_secret, set_secret, list_secrets,
         read_file, write_file, list_directory, 
         exit_conversation, send_telegram_message,
-        gmail_act, drive_act, docs_act, sheets_act, calendar_act,
+        gmail_act, drive_act, docs_act, sheets_act, calendar_act, wallet_act,
+        paypal_act,
     ]
     # Add macOS tool only on macOS
     if platform.system() == "Darwin":

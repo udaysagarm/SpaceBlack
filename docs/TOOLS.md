@@ -84,6 +84,7 @@ When the Google skill is enabled via standard OAuth2, Ghost gains access to the 
 *   `drive_act(action, ...)`: Upload, download, move, share, and list Drive files.
 *   `docs_act(action, ...)`: Create, append, and read Google Docs.
 *   `sheets_act(action, ...)`: Create, read, and write cell ranges to Google Sheets.
+*   `wallet_act(action, ...)`: Create and manage Google Wallet passes (classes and objects).
 
 ### macOS Native Control
 When running on macOS (with the skill enabled), Ghost can control local applications via AppleScript using a single endpoint:
@@ -92,6 +93,7 @@ When running on macOS (with the skill enabled), Ghost can control local applicat
 ### Developer & Service APIs
 *   `github_act(action, ...)`: Direct control over GitHub via API. Can read repos, manage issues, create branches, and directly manipulate code files.
 *   `stripe_act(action, ...)`: Secure gateway to the Stripe API. Check accounts, list invoices, manage customers, and generate checkout sessions.
+*   `paypal_act(action, ...)`: Access the PayPal Developer API to check balances, securely send payouts (with explicit console confirmation required), and draft invoices.
 *   `discord_act(action, ...)`: Background Discord bot controller. Can send messages, list guild members, read channels, and manage DMs.
 *   `get_current_weather(location)`: Fetches real-time weather from OpenWeather.
 *   `send_telegram_message(message)`: Broadcasts a message to the user via the Telegram Gateway.

@@ -68,3 +68,13 @@ Connects Space Black to Google Workspace via OAuth2, enabling autonomous managem
 | `invite_participant` | Add attendee | `event_id`, `email` |
 | `list_calendars` | List calendars | — |
 | `get_event` | Event details | `event_id` |
+
+### `wallet_act`
+| Action | Description | Required Args |
+|--------|-------------|---------------|
+| `get_issuer` | Get issuer details | `issuer_id` |
+| `list_classes` | List pass classes | `issuer_id` |
+| `get_class` | Get class details | `issuer_id`, `class_suffix` (or `class_id`) |
+| `create_class` | Create new pass class | `payload` |
+| `get_object` | Get object details | `issuer_id`, `object_suffix` (or `object_id`) |
+| `create_object` | Create new pass object | `payload` |

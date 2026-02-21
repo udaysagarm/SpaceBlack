@@ -24,6 +24,7 @@ ALL_SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/wallet_object.issuer",
 ]
 
 TOKEN_PATH = os.path.join("brain", "google_token.json")

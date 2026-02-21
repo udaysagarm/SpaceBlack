@@ -141,6 +141,26 @@ Manage customers, check balances, list prices, and create checkout sessions secu
     - "Generate a checkout session link for the 'Premium' tier price."
     - "Create a new customer named Alice."
 
-## 9. Spotify (Planned)
+## 9. PayPal API (Payments & Payouts)
+Manage your PayPal account by checking balances, sending payouts natively with explicit security confirmations, and generating invoices via the PayPal Developer API.
+
+- **Status**: ✅ Implemented
+- **Config**: Configurable via the Terminal UI (Settings -> Skills).
+```json
+"skills": {
+    "paypal": {
+        "enabled": true,
+        "client_id": "YOUR_CLIENT_ID",
+        "client_secret": "YOUR_SECRET",
+        "environment": "sandbox"
+    }
+}
+```
+- **Usage**:
+    - "Check my PayPal balance."
+    - "Create a test invoice for test@example.com."
+    - "Send a $5 payout to john.doe@example.com."
+
+## 10. Spotify (Planned)
 Control music playback.
 - **Status**: 🚧 Coming Soon

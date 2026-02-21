@@ -495,6 +495,10 @@ class SkillsScreen(ModalScreen):
         macos_cfg = skills_config.get("macos", {})
         macos_enabled = macos_cfg.get("enabled", False) and platform.system() == "Darwin"
 
+        paypal_cfg = skills_config.get("paypal", {})
+        paypal_enabled = paypal_cfg.get("enabled", False)
+        paypal_env = paypal_cfg.get("environment", "sandbox")
+
         with Container(id="skills-dialog"):
             yield Label("Agent Skills Manager", classes="config-title")
 
@@ -571,7 +575,20 @@ class SkillsScreen(ModalScreen):
                         yield Label("macOS Native Control", classes="skill-name")
                         yield Switch(value=macos_enabled, id="macos_switch")
                     yield Label("Control Apple Mail, Calendar, Notes, Finder, Reminders, and system apps.", classes="description")
-                    yield Label("Only available on macOS. Uses AppleScript.", classes="help-text")
+                    yield Label("Requires an Apple device.", classes="help-text")
+
+                with Vertical(classes="skill-row"):
+                    with Horizontal(classes="skill-header"):
+                        yield Label("PayPal API (Payments & Payouts)", classes="skill-name")
+                        yield Switch(value=paypal_enabled, id="paypal_switch")
+                    yield Label("Retrieve balance, securely send payouts, and generate invoices.", classes="description")
+                    yield Label("PayPal Client ID:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new client ID to update", password=True, id="paypal_client_id", classes="api-key-input")
+                    yield Label("PayPal Secret:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new secret to update", password=True, id="paypal_secret", classes="api-key-input")
+                    yield Label("Environment (sandbox or live):", classes="api-key-label")
+                    yield Input(value=paypal_env, placeholder="sandbox", id="paypal_env", classes="api-key-input")
+                    yield Label("Warning: Explicit terminal confirmation is required to send real money.", classes="help-text")
 
             with Horizontal(classes="btn-group"):
                 yield Button("Save & Close", variant="primary", id="save_skills_btn")
@@ -597,6 +614,11 @@ class SkillsScreen(ModalScreen):
         tg_enabled = self.query_one("#telegram_switch").value
         tg_token = self.query_one("#telegram_token").value
         tg_user_id = self.query_one("#telegram_user_id").value
+
+        paypal_enabled = self.query_one("#paypal_switch").value
+        paypal_client_id = self.query_one("#paypal_client_id").value
+        paypal_secret = self.query_one("#paypal_secret").value
+        paypal_env = self.query_one("#paypal_env").value
 
         config_data = {}
         if os.path.exists(CONFIG_FILE):
@@ -662,6 +684,16 @@ class SkillsScreen(ModalScreen):
         macos_data = config_data["skills"].get("macos", {})
         macos_data["enabled"] = macos_enabled
         config_data["skills"]["macos"] = macos_data
+
+        paypal_data = config_data["skills"].get("paypal", {})
+        paypal_data["enabled"] = paypal_enabled
+        if paypal_client_id:
+            paypal_data["client_id"] = paypal_client_id
+        if paypal_secret:
+            paypal_data["client_secret"] = paypal_secret
+        if paypal_env:
+            paypal_data["environment"] = paypal_env.lower()
+        config_data["skills"]["paypal"] = paypal_data
 
         try:
              with open(CONFIG_FILE, "w") as f:
