@@ -7,6 +7,11 @@ Space Black is designed with a "Local-First" philosophy. Your data, keys, and me
 -   **Protection**: The `.env` file is included in `.gitignore` to prevent accidental commits to public repositories.
 -   **Configuration**: Keys can be managed via the TUI (`/config` and `/skills`) or by manually editing the `.env` file.
 
+## Vault Security (Credential Storage)
+Space Black provides a tiered secure Vault system for storing user passwords and tokens automatically.
+1.  **OS Native Storage (Default)**: Uses the secure keychain provided by your host operating system (e.g., macOS Keychain, Windows Credential Manager, Linux Secret Service).
+2.  **Local Encrypted Vault**: An optional fallback file (`brain/vault/secrets.enc`) encrypted using symmetric AES-128 (Fernet). To access this fallback vault, you must establish a secret passphrase via `initialize_local_vault` and unlock it per-session using `unlock_local_vault`. At rest, without the passphrase, this file cannot be decrypted. The old plaintext `secrets.json` system is completely deprecated and removed.
+
 ## Telegram Gateway Security
 The Telegram Bot skill is a public-facing interface. To secure it:
 1.  **Allowed User ID**: The bot validates every incoming message against the `allowed_user_id` configured in `config.json`. Messages from unauthorized users are rejected immediately.

@@ -29,6 +29,9 @@ Ghost is the **Agent** living inside.
 ### 🧠 Persistent Memory
 Ghost remembers. It maintains a relationship with you, storing preferences and project details in `brain/USER.md` and semantic memories in `brain/memory/`.
 
+### 🔐 Secure Vault System
+Ghost stores credentials securely prioritizing the native OS Keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service), with an additional AES-encrypted local file vault fallback, ensuring API keys and passwords are never kept in plaintext.
+
 ### 🌐 Autonomous Web Browsing
 Ghost can surf the web like a human.
 - **Vision**: Sees page structure (Accessibility Tree), not just HTML soup.

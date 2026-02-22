@@ -25,9 +25,13 @@ memory/
 # Google OAuth token is stored as brain/google_token.json (covered by brain/*.json)
 
 # Keep instructions (AGENTS.md, TOOLS.md, IDENTITY.md, HEARTBEAT.md)
-# If you want to share custom instructions, commit them.
-# If you want to use defaults, ignore them too.
-# For now, we only ignore personal data as requested.
+# The user specifically requested no personal details leak, so we will ignore ALL brain generated files.
+brain/TOOLS.md
+brain/AGENTS.md
+brain/IDENTITY.md
+brain/HEARTBEAT.md
+brain/SHIELD.md
+brain/*.md
 
 
 

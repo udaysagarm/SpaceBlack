@@ -278,7 +278,7 @@ from tools.skills.stripe.stripe_api import stripe_act
 # Discord bot actions
 from tools.skills.discord.discord_api import discord_act
 # Use Vault Tools
-from tools.vault import get_secret, set_secret, list_secrets
+from tools.vault import get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault
 from tools.files import read_file, write_file, list_directory
 from tools.skills.telegram.send_message import send_telegram_message
 # Google Workspace tools
@@ -389,7 +389,7 @@ def run_agent(state: AgentState):
     tools.extend([read_file, write_file, list_directory])
     
     # Vault Tools (Always available for memory management)
-    tools.extend([get_secret, set_secret, list_secrets])
+    tools.extend([get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault])
     
     # Telegram tool
     tools.append(send_telegram_message)
@@ -467,7 +467,7 @@ def build_graph():
         reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, 
         schedule_task, cancel_task, web_search, get_current_weather, 
         browser_act, github_act, stripe_act, discord_act,
-        get_secret, set_secret, list_secrets,
+        get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault,
         read_file, write_file, list_directory, 
         exit_conversation, send_telegram_message,
         gmail_act, drive_act, docs_act, sheets_act, calendar_act, wallet_act,

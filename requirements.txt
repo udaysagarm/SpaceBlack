@@ -21,3 +21,7 @@ html2text
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+
+# Vault System
+keyring
+cryptography

@@ -6,6 +6,12 @@ This file lists the capabilities currently enabled for your Ghost Agent.
 
 ## System & Memory
 -   **reflect_and_evolve**: I can update my own "Soul" (System Prompt) to adapt my personality and behavior based on our interactions.
+-   **get_secret**: I can securely retrieve secrets stored in the host OS Keyring or the Local Encrypted Vault.
+-   **set_secret**: I can securely save a string to the OS Keyring or Local Vault.
+-   **list_secrets**: I can list keys stored in the unlocked Local Vault.
+-   **initialize_local_vault**: I can create a new encrypted local file vault (`secrets.enc`) with a passphrase.
+-   **unlock_local_vault**: I can unlock the local encrypted vault for this session.
+-   **lock_local_vault**: I can lock the local encrypted vault.
 -   **update_memory**: I can save important facts, events, and context to my long-term memory logs (`brain/memory/`).
 -   **update_user_profile**: I can learn and store structured information about you (preferences, tech stack) in `brain/USER.md`.
 -   **execute_terminal_command**: I can run shell commands (`ls`, `git status`, `cat file`). I should run read-only commands IMMEDIATELY without asking.

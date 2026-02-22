@@ -39,7 +39,7 @@ Modern websites often block bots. Space Black's browser includes stealth feature
 The browser session maintains state across actions:
 - **Cookies**: Logged-in sessions persist (e.g., if Ghost logs into GitHub, it stays logged in).
 - **Local Storage**: Site preferences are saved.
-- **Session Vault**: Sensitive session data is stored securely in `brain/vault/`.
+- **Session Vault**: Sensitive credentials (passwords, specific tokens) can be automatically retrieved by the agent during autonomous browsing using the **Vault System**. By default it will fetch passwords from your OS Native Keyring (macOS might request a one-time "Always Allow" confirmation). Alternatively, if passwords are stored in the Local Encrypted Vault, the agent can fetch them automatically once you unlock the vault for that session.
 
 ## Usage Examples
 
