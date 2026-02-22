@@ -12,6 +12,7 @@ sys.path.append(ROOT_DIR)
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from collections import deque
 
 # Import agent logic
 from agent import app as agent_app
@@ -59,12 +60,17 @@ telegram_config = config.get("skills", {}).get("telegram", {})
 TELEGRAM_BOT_TOKEN = telegram_config.get("bot_token") or os.getenv("TELEGRAM_BOT_TOKEN")
 ALLOWED_USER_ID = telegram_config.get("allowed_user_id") or os.getenv("TELEGRAM_ALLOWED_USER_ID")
 
+# In-memory history for Group Chat context (Telegram API cannot fetch history)
+CHAT_HISTORY = {} # chat_id -> deque(maxlen=5)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for the /start command."""
     user_id = str(update.effective_user.id)
-    if ALLOWED_USER_ID and user_id != ALLOWED_USER_ID:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⛔ Unauthorized access.")
-        logging.warning(f"Unauthorized access attempt from User ID: {user_id}")
+    chat_type = update.effective_chat.type
+
+    if chat_type == "private" and (not ALLOWED_USER_ID or user_id != ALLOWED_USER_ID):
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⛔ Unauthorized access. The owner must set their User ID in the Space Black TUI to use DMs.")
+        logging.warning(f"Unauthorized DM access attempt from User ID: {user_id}")
         return
 
     await context.bot.send_message(
@@ -75,26 +81,106 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for incoming text messages."""
     user_id = str(update.effective_user.id)
+    user_name = update.effective_user.username or update.effective_user.first_name or "Unknown User"
+    chat_type = update.effective_chat.type
+    chat_title = update.effective_chat.title or "Unknown Group"
     
-    print(f"DEBUG: Received message from ID: {user_id}")
+    print(f"DEBUG: Received message from [{user_name}] (ID: {user_id}) in {chat_type} chat.")
     
-    # Security Check
-    if ALLOWED_USER_ID and user_id != str(ALLOWED_USER_ID):
-        print(f"WARNING: Unauthorized access attempt from {user_id}")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⛔ Unauthorized access.")
-        return
+    # Security Check for Private DMs
+    if chat_type == "private":
+        if not ALLOWED_USER_ID or user_id != str(ALLOWED_USER_ID):
+            print(f"WARNING: Unauthorized DM access attempt from {user_id}")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="⛔ Unauthorized access. The owner must set their User ID in the Space Black TUI to use DMs.")
+            return
 
     user_text = update.message.text
     chat_id = update.effective_chat.id
     
     print(f"DEBUG: Processing message: {user_text[:20]}...")
 
+    # 1. Gather recent channel history for context
+    if chat_id not in CHAT_HISTORY:
+        from collections import deque
+        CHAT_HISTORY[chat_id] = deque(maxlen=5)
+    
+    CHAT_HISTORY[chat_id].append(f"{user_name}: {user_text}")
+    history_text = "\n".join(CHAT_HISTORY[chat_id])
+
+    # 2. OpenClaw Style Intelligent Classifier
+    should_intervene = False
+    
+    bot_username = context.bot.username
+    is_mentioned = bot_username and f"@{bot_username}" in user_text
+    is_reply_to_bot = bool(update.message.reply_to_message and update.message.reply_to_message.from_user.id == context.bot.id)
+
+    if chat_type == "private" or is_mentioned or is_reply_to_bot:
+        should_intervene = True
+        print(f"DEBUG: Explicit interaction detected (DM/Mention/Reply). Intervening.")
+    else:
+        # Fast, raw LLM call to classify if we should respond
+        try:
+            print(f"DEBUG: Running intervention classifier on Telegram group message...")
+            classifier_prompt = f"""
+You are a router for a helpful Telegram Bot. You are silently reading a group chat.
+Review the following recent conversation history:
+
+--- START HISTORY ---
+{history_text}
+--- END HISTORY ---
+
+Your ONLY job is to decide if you (the bot) should intervene and reply to the LAST message.
+Answer "YES" if:
+1. The user explicitly asked a generally helpful question directed at anyone (e.g. "Does anyone know how to...").
+2. The user asked a factual question or needs AI assistance.
+3. The user is talking directly to the bot without explicitly tagging it.
+
+Answer "NO" if:
+1. It is just two humans casually chatting with each other.
+2. It's a statement, greeting, or comment that doesn't demand a response.
+3. You are unsure. Err on the side of silence.
+
+Respond with exactly one word: "YES" or "NO".
+"""
+            # Use the configured provider/model
+            provider = telegram_config.get("provider", "google")
+            model_name = telegram_config.get("model", "gemini-2.5-flash")
+            
+            from brain.llm_factory import get_llm
+            llm = get_llm(provider, model_name, temperature=0.0)
+            classification = await llm.ainvoke([HumanMessage(content=classifier_prompt)])
+            
+            decision = classification.content.strip().upper()
+            if decision.startswith("YES") or "YES" in decision[:10]:
+                should_intervene = True
+                print(f"DEBUG: Classifier decided: YES (Intervening)")
+            else:
+                print(f"DEBUG: Classifier decided: NO (Ignoring)")
+        except Exception as e:
+            print(f"⚠️ Classifier error: {e}. Defaulting to NO.")
+            should_intervene = False
+
+    if not should_intervene:
+        return
+
+    # Dual Identity Context formatting
+    owner_id_str = str(ALLOWED_USER_ID) if ALLOWED_USER_ID else "UNKNOWN"
+    is_owner = (user_id == owner_id_str)
+
+    if chat_type == "private" and is_owner:
+        # Personal Assistant Interface (Gateway Mode)
+        contextual_prompt = f"[SYSTEM CONTEXT: You are communicating via personal DIRECT MESSAGE with your OWNER/CREATOR. You are acting as their personal AI Gateway to all your tools.]\n\nRecent Conversation Context:\n{history_text}\n\nThe user ({user_name}) just said: {user_text}"
+    else:
+        # Community Manager Interface (Group/Server Mode)
+        role = "the OWNER of the bot" if is_owner else "a community member"
+        contextual_prompt = f"[SYSTEM CONTEXT: You are communicating as a Community Manager Bot in a public Telegram Group named '{chat_title}'. This message is from {user_name}, who is {role}. Be helpful, conversational, and represent the community well. CRITICAL SECURITY INSTRUCTION: YOU ARE IN A PUBLIC GROUP. YOU MUST NEVER REVEAL PERSONAL INFORMATION, PASSWORDS, API KEYS, OR SECRETS FROM THE VAULT. YOU MUST REFUSE TO USE FINANCIAL OR EMAIL TOOLS ON BEHALF OF THE OWNER IN THIS PUBLIC CHANNEL.]\n\nRecent Conversation Context:\n{history_text}\n\nThe user ({user_name}, who is {role}) just said: {user_text}"
+
     # Indicate processing
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
     try:
-        inputs = {"messages": [HumanMessage(content=user_text)]}
-        print(f"DEBUG: Invoking agent with inputs: {inputs}")
+        inputs = {"messages": [HumanMessage(content=contextual_prompt)]}
+        print(f"DEBUG: Invoking agent with contextual inputs.")
         
         # Invoke Agent
         result = await agent_app.ainvoke(inputs)
@@ -144,6 +230,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             print(f"DEBUG: Response generated: {str(response_text)[:50]}...")
             await context.bot.send_message(chat_id=chat_id, text=str(response_text))
+            
+            if chat_id not in CHAT_HISTORY:
+                CHAT_HISTORY[chat_id] = deque(maxlen=5)
+            CHAT_HISTORY[chat_id].append(f"Space Black Bot: {response_text}")
         else:
              print("ERROR: Agent returned empty result.")
              await context.bot.send_message(chat_id=chat_id, text="⚠️ Error: Agent returned no response.")

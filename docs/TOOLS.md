@@ -95,5 +95,6 @@ When running on macOS (with the skill enabled), Ghost can control local applicat
 *   `stripe_act(action, ...)`: Secure gateway to the Stripe API. Check accounts, list invoices, manage customers, and generate checkout sessions.
 *   `paypal_act(action, ...)`: Access the PayPal Developer API to check balances, securely send payouts (with explicit console confirmation required), and draft invoices.
 *   `discord_act(action, ...)`: Background Discord bot controller. Can send messages, list guild members, read channels, and manage DMs.
+*   `slack_act(action, ...)`: Background Socket Mode Slack bot. Send DM/Channel messages, read histories, and react to threads.
 *   `get_current_weather(location)`: Fetches real-time weather from OpenWeather.
 *   `send_telegram_message(message)`: Broadcasts a message to the user via the Telegram Gateway.

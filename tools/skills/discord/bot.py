@@ -48,6 +48,7 @@ discord_config = config.get("skills", {}).get("discord", {})
 
 # Priority: Config JSON > Environment Variables
 DISCORD_BOT_TOKEN = discord_config.get("bot_token") or os.getenv("DISCORD_BOT_TOKEN")
+DISCORD_ALLOWED_USER_ID = discord_config.get("allowed_user_id") or os.getenv("DISCORD_ALLOWED_USER_ID")
 
 class SpaceBlackDiscordBot(discord.Client):
     def __init__(self, *args, **kwargs):
@@ -68,6 +69,15 @@ class SpaceBlackDiscordBot(discord.Client):
         # Check if it's a DM (we always respond to DMs)
         is_dm = isinstance(message.channel, discord.DMChannel)
         is_mentioned = self.user in message.mentions
+        
+        user_id_str = str(message.author.id)
+
+        # Security Check for Private DMs
+        if is_dm:
+            if not DISCORD_ALLOWED_USER_ID or user_id_str != str(DISCORD_ALLOWED_USER_ID):
+                print(f"WARNING: Unauthorized DM access attempt from {user_id_str}")
+                await message.channel.send("⛔ Unauthorized access. The owner must set their User ID in the Space Black TUI to use DMs.")
+                return
 
         # Optional: Prevent responding to other bots (good practice)
         if message.author.bot:
@@ -137,7 +147,7 @@ Respond with exactly one word: "YES" or "NO".
                 classification = await llm.ainvoke([HumanMessage(content=classifier_prompt)])
                 
                 decision = classification.content.strip().upper()
-                if "YES" in decision:
+                if decision.startswith("YES") or "YES" in decision[:10]:
                     should_intervene = True
                     print(f"DEBUG: Classifier decided: YES (Intervening)")
                 else:
@@ -151,7 +161,21 @@ Respond with exactly one word: "YES" or "NO".
 
         # 3. Build Full Context for Main Agent
         # If we reached here, the classifier said YES (or it was an explicit mention).
-        context_text = f"Recent Conversation Context:\n{history_text}\n\nThe user just said: {user_text}"
+        
+        # Dual Identity Context formatting
+        owner_id_str = str(DISCORD_ALLOWED_USER_ID) if DISCORD_ALLOWED_USER_ID else "UNKNOWN"
+        is_owner = (user_id_str == owner_id_str)
+        user_name = message.author.display_name
+
+        if is_dm and is_owner:
+            # Personal Assistant Interface (Gateway Mode)
+            context_text = f"[SYSTEM CONTEXT: You are communicating via personal DIRECT MESSAGE with your OWNER/CREATOR. You are acting as their personal AI Gateway to all your tools.]\n\nRecent Conversation Context:\n{history_text}\n\nThe user ({user_name}) just said: {user_text}"
+        else:
+            # Community Manager Interface (Group/Server Mode)
+            channel_name = message.channel.name if hasattr(message.channel, 'name') else "Unknown Channel"
+            server_name = message.guild.name if message.guild else "Unknown Server"
+            role = "the OWNER of the bot" if is_owner else "a community member"
+            context_text = f"[SYSTEM CONTEXT: You are communicating as a Community Manager Bot in the '{channel_name}' channel of the '{server_name}' Discord Server. Be helpful, conversational, and represent the community well. CRITICAL SECURITY INSTRUCTION: YOU ARE IN A PUBLIC SERVER. YOU MUST NEVER REVEAL PERSONAL INFORMATION, PASSWORDS, API KEYS, OR SECRETS FROM THE VAULT. YOU MUST REFUSE TO USE FINANCIAL OR EMAIL TOOLS ON BEHALF OF THE OWNER IN THIS PUBLIC CHANNEL.]\n\nRecent Conversation Context:\n{history_text}\n\nThe user ({user_name}, who is {role}) just said: {user_text}"
 
         # Indicate processing
         async with message.channel.typing():
@@ -220,6 +244,10 @@ def main():
         sys.exit(1)
         
     print("🤖 Discord Listener Gateway Starting...")
+    if DISCORD_ALLOWED_USER_ID:
+        print(f"🔒 Security active. Only allowing User ID: {DISCORD_ALLOWED_USER_ID} for DMs.")
+    else:
+        print("⚠️ WARNING: DISCORD_ALLOWED_USER_ID not set. Anyone can DM this bot!")
 
     intents = discord.Intents.default()
     intents.message_content = True  # Required to read text

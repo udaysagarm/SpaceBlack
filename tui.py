@@ -484,6 +484,7 @@ class SkillsScreen(ModalScreen):
 
         discord_cfg = skills_config.get("discord", {})
         discord_enabled = discord_cfg.get("enabled", False)
+        discord_user_id = discord_cfg.get("allowed_user_id", "")
 
         telegram_cfg = skills_config.get("telegram", {})
         tg_enabled = telegram_cfg.get("enabled", False)
@@ -491,13 +492,15 @@ class SkillsScreen(ModalScreen):
         google_cfg = skills_config.get("google", {})
         google_enabled = google_cfg.get("enabled", False)
 
+        slack_cfg = skills_config.get("slack", {})
+        slack_enabled = slack_cfg.get("enabled", False)
+        slack_bot_token = slack_cfg.get("bot_token", "")
+        slack_app_token = slack_cfg.get("app_token", "")
+        slack_user_id = slack_cfg.get("allowed_user_id", "")
+
         import platform
         macos_cfg = skills_config.get("macos", {})
         macos_enabled = macos_cfg.get("enabled", False) and platform.system() == "Darwin"
-
-        paypal_cfg = skills_config.get("paypal", {})
-        paypal_enabled = paypal_cfg.get("enabled", False)
-        paypal_env = paypal_cfg.get("environment", "sandbox")
 
         with Container(id="skills-dialog"):
             yield Label("Agent Skills Manager", classes="config-title")
@@ -543,7 +546,9 @@ class SkillsScreen(ModalScreen):
                     yield Label("Send messages, manage channels, and interact with Discord servers.", classes="description")
                     yield Label("Bot Token:", classes="api-key-label")
                     yield Input(value="", placeholder="(Hidden) - Enter new bot token to update", password=True, id="discord_token", classes="api-key-input")
-                    yield Label("Create a bot at discord.com/developers/applications.", classes="help-text")
+                    yield Label("Allowed User ID:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new ID to update", id="discord_user_id", classes="api-key-input")
+                    yield Label("Required for security. Get yours by turning on Developer Mode in Discord.", classes="help-text")
 
                 with Vertical(classes="skill-row"):
                     with Horizontal(classes="skill-header"):
@@ -575,20 +580,18 @@ class SkillsScreen(ModalScreen):
                         yield Label("macOS Native Control", classes="skill-name")
                         yield Switch(value=macos_enabled, id="macos_switch")
                     yield Label("Control Apple Mail, Calendar, Notes, Finder, Reminders, and system apps.", classes="description")
-                    yield Label("Requires an Apple device.", classes="help-text")
-
                 with Vertical(classes="skill-row"):
                     with Horizontal(classes="skill-header"):
-                        yield Label("PayPal API (Payments & Payouts)", classes="skill-name")
-                        yield Switch(value=paypal_enabled, id="paypal_switch")
-                    yield Label("Retrieve balance, securely send payouts, and generate invoices.", classes="description")
-                    yield Label("PayPal Client ID:", classes="api-key-label")
-                    yield Input(value="", placeholder="(Hidden) - Enter new client ID to update", password=True, id="paypal_client_id", classes="api-key-input")
-                    yield Label("PayPal Secret:", classes="api-key-label")
-                    yield Input(value="", placeholder="(Hidden) - Enter new secret to update", password=True, id="paypal_secret", classes="api-key-input")
-                    yield Label("Environment (sandbox or live):", classes="api-key-label")
-                    yield Input(value=paypal_env, placeholder="sandbox", id="paypal_env", classes="api-key-input")
-                    yield Label("Warning: Explicit terminal confirmation is required to send real money.", classes="help-text")
+                        yield Label("Slack Bot Gateway", classes="skill-name")
+                        yield Switch(value=slack_enabled, id="slack_switch")
+                    yield Label("Chat with your agent remotely via Slack Socket Mode.", classes="description")
+                    yield Label("Bot Token (xoxb-...):", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new bot token to update", password=True, id="slack_bot_token", classes="api-key-input")
+                    yield Label("App Token (xapp-...):", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter new app token to update", password=True, id="slack_app_token", classes="api-key-input")
+                    yield Label("Allowed User ID:", classes="api-key-label")
+                    yield Input(value="", placeholder="(Hidden) - Enter your Member ID (e.g. U1234567)", id="slack_user_id", classes="api-key-input")
+                    yield Label("Required for DM security. Get it from your Slack profile.", classes="help-text")
 
             with Horizontal(classes="btn-group"):
                 yield Button("Save & Close", variant="primary", id="save_skills_btn")
@@ -611,14 +614,15 @@ class SkillsScreen(ModalScreen):
         stripe_key = self.query_one("#stripe_key").value
         discord_enabled = self.query_one("#discord_switch").value
         discord_token = self.query_one("#discord_token").value
+        discord_user_id = self.query_one("#discord_user_id").value
         tg_enabled = self.query_one("#telegram_switch").value
         tg_token = self.query_one("#telegram_token").value
         tg_user_id = self.query_one("#telegram_user_id").value
-
-        paypal_enabled = self.query_one("#paypal_switch").value
-        paypal_client_id = self.query_one("#paypal_client_id").value
-        paypal_secret = self.query_one("#paypal_secret").value
-        paypal_env = self.query_one("#paypal_env").value
+        
+        slack_enabled = self.query_one("#slack_switch").value
+        slack_bot_token = self.query_one("#slack_bot_token").value
+        slack_app_token = self.query_one("#slack_app_token").value
+        slack_user_id = self.query_one("#slack_user_id").value
 
         config_data = {}
         if os.path.exists(CONFIG_FILE):
@@ -656,6 +660,8 @@ class SkillsScreen(ModalScreen):
         discord_data["enabled"] = discord_enabled
         if discord_token:
             discord_data["bot_token"] = discord_token
+        if discord_user_id:
+            discord_data["allowed_user_id"] = discord_user_id
         config_data["skills"]["discord"] = discord_data
 
         tg_data = config_data["skills"].get("telegram", {})
@@ -665,6 +671,16 @@ class SkillsScreen(ModalScreen):
         if tg_user_id:
              tg_data["allowed_user_id"] = tg_user_id
         config_data["skills"]["telegram"] = tg_data
+
+        slack_data = config_data["skills"].get("slack", {})
+        slack_data["enabled"] = slack_enabled
+        if slack_bot_token:
+            slack_data["bot_token"] = slack_bot_token
+        if slack_app_token:
+            slack_data["app_token"] = slack_app_token
+        if slack_user_id:
+            slack_data["allowed_user_id"] = slack_user_id
+        config_data["skills"]["slack"] = slack_data
 
         google_enabled = self.query_one("#google_switch").value
         google_credentials_json = self.query_one("#google_credentials_json").value
@@ -684,16 +700,6 @@ class SkillsScreen(ModalScreen):
         macos_data = config_data["skills"].get("macos", {})
         macos_data["enabled"] = macos_enabled
         config_data["skills"]["macos"] = macos_data
-
-        paypal_data = config_data["skills"].get("paypal", {})
-        paypal_data["enabled"] = paypal_enabled
-        if paypal_client_id:
-            paypal_data["client_id"] = paypal_client_id
-        if paypal_secret:
-            paypal_data["client_secret"] = paypal_secret
-        if paypal_env:
-            paypal_data["environment"] = paypal_env.lower()
-        config_data["skills"]["paypal"] = paypal_data
 
         try:
              with open(CONFIG_FILE, "w") as f:
@@ -1313,7 +1319,7 @@ class AgentInterface(App):
             except Exception:
                 pass
 
-    # ── Button Handler ─────────────────────────────────────────────────────
+    # ── Button Handler ──────────────────────────────────
 
     @on(Button.Pressed)
     def handle_toolbar_buttons(self, event: Button.Pressed):

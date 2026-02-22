@@ -94,6 +94,18 @@ def main():
             else:
                  print(f"⚠️  Discord Bot script not found at {discord_bot_path}")
                  
+        # 3. Start Slack Bot if enabled
+        slack_config = config.get("skills", {}).get("slack", {})
+        if slack_config.get("enabled"):
+            print("🚀 Launching Slack Bot...")
+            slack_bot_path = os.path.join("tools", "skills", "slack", "bot.py")
+            if os.path.exists(slack_bot_path):
+                 p = subprocess.Popen([sys.executable, slack_bot_path])
+                 processes.append(p)
+                 print(f"   Slack Bot PID: {p.pid}")
+            else:
+                 print(f"⚠️  Slack Bot script not found at {slack_bot_path}")
+                 
     except Exception as e:
         print(f"⚠️  Failed to launch background skills: {e}")
 

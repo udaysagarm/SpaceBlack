@@ -161,6 +161,23 @@ Manage your PayPal account by checking balances, sending payouts natively with e
     - "Create a test invoice for test@example.com."
     - "Send a $5 payout to john.doe@example.com."
 
-## 10. Spotify (Planned)
-Control music playback.
-- **Status**: 🚧 Coming Soon
+## 10. Slack Bot
+Deploy a Socket Mode Slack Bot that you can interact with, and allow the agent to read channels, answer questions via an Intelligent Classifier, and send DMs. Automatically secures Vault data based on channel context.
+
+- **Status**: ✅ Implemented
+- **Config**: Configurable via the Terminal UI (Settings -> Skills).
+```json
+"skills": {
+    "slack": {
+        "enabled": true,
+        "bot_token": "xoxb-YOUR_BOT_TOKEN",
+        "app_token": "xapp-YOUR_APP_TOKEN",
+        "allowed_user_id": "U1234567"
+    }
+}
+```
+- **Usage**:
+    - "Summarize the last 25 messages in the #general channel."
+    - "Send a DM to Bob telling him the deployment is done."
+    - "What is the status of the Jira ticket mentioned above?"
+

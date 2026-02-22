@@ -46,6 +46,48 @@ def _handle_response(resp: requests.Response) -> str:
     except:
         return f"HTTP {resp.status_code}: {resp.text}"
 
+def _verify_remote_confirmation(action: str, details: dict) -> str | None:
+    """
+    Handles headless confirmation via chat history for Telegram/Discord.
+    Returns an error string to stop the agent if unconfirmed, or None if confirmed.
+    """
+    LOCK_FILE = "brain/.payment_lock"
+    import json
+    import random
+    
+    try:
+        if os.path.exists(LOCK_FILE):
+            with open(LOCK_FILE, "r") as f:
+                lock = json.load(f)
+            # Check if this exact transaction was locked
+            if lock.get("action") == action and lock.get("details") == details:
+                expected_code = lock.get("code")
+                # Verify via chat history
+                history_file = "brain/chat_history.json"
+                user_confirmed = False
+                if os.path.exists(history_file):
+                    with open(history_file, "r") as f:
+                        hist = json.load(f)
+                    humans = [m for m in hist if m.get("type") == "human"]
+                    if humans:
+                        last_human = str(humans[-1].get("data", {}).get("content", ""))
+                        if expected_code in last_human:
+                            user_confirmed = True
+
+                if user_confirmed:
+                    os.remove(LOCK_FILE)
+                    return None # Proceed!
+                else:
+                    return f"Transaction pending. You must wait for the user to reply with the code: {expected_code}"
+    except Exception:
+        pass
+
+    # Create a new lock
+    code = str(random.randint(10000, 99999))
+    with open(LOCK_FILE, "w") as f:
+        json.dump({"action": action, "details": details, "code": code}, f)
+    return f"SECURITY ALERT: You MUST stop and ask the user to confirm this payment in the chat. Tell them the amount and details, and ask them to reply with the exact code: {code}"
+
 @tool
 def stripe_act(
     action: str, 
@@ -100,18 +142,22 @@ def stripe_act(
         elif action == "create_payment_intent":
             if not amount or not currency: return "Error: Missing 'amount' (cents) or 'currency'."
 
-            print("\n" + "="*50)
-            print("🚨 CRITICAL ALERT: AI INITIATED PAYMENT INTENT 🚨")
-            print(f"Action: Create Stripe Payment Intent")
-            print(f"Customer ID: {customer_id or 'Guest'}")
-            print(f"Amount: {amount} {currency.upper()} (in cents)")
-            print("="*50)
-            print("Do you authorize this transaction? Type 'yes' to proceed, or any other key to cancel: ", end="")
-            sys.stdout.flush()
-            user_input = sys.stdin.readline().strip().lower()
+            if sys.stdin and sys.stdin.isatty():
+                print("\n" + "="*50)
+                print("🚨 CRITICAL ALERT: AI INITIATED PAYMENT INTENT 🚨")
+                print(f"Action: Create Stripe Payment Intent")
+                print(f"Customer ID: {customer_id or 'Guest'}")
+                print(f"Amount: {amount} {currency.upper()} (in cents)")
+                print("="*50)
+                print("Do you authorize this transaction? Type 'yes' to proceed, or any other key to cancel: ", end="")
+                sys.stdout.flush()
+                user_input = sys.stdin.readline().strip().lower()
 
-            if user_input != 'yes':
-                return "Payment Intent creation cancelled by human user. Aborted."
+                if user_input != 'yes':
+                    return "Payment Intent creation cancelled by human user. Aborted."
+            else:
+                err = _verify_remote_confirmation("create_payment_intent", {"amount": amount, "currency": currency, "customer": customer_id})
+                if err: return err
 
             data = {"amount": amount, "currency": currency.lower()}
             if customer_id: data["customer"] = customer_id
@@ -122,18 +168,22 @@ def stripe_act(
             if not amount or not currency or not customer_id: 
                 return "Error: Missing 'amount' (cents), 'currency', or 'customer_id'."
 
-            print("\n" + "="*50)
-            print("🚨 CRITICAL ALERT: AI INITIATED DIRECT STRIPE CHARGE 🚨")
-            print(f"Action: Direct Stripe Charge")
-            print(f"Customer ID: {customer_id}")
-            print(f"Amount: {amount} {currency.upper()} (in cents)")
-            print("="*50)
-            print("Do you authorize this transaction? Type 'yes' to proceed, or any other key to cancel: ", end="")
-            sys.stdout.flush()
-            user_input = sys.stdin.readline().strip().lower()
+            if sys.stdin and sys.stdin.isatty():
+                print("\n" + "="*50)
+                print("🚨 CRITICAL ALERT: AI INITIATED DIRECT STRIPE CHARGE 🚨")
+                print(f"Action: Direct Stripe Charge")
+                print(f"Customer ID: {customer_id}")
+                print(f"Amount: {amount} {currency.upper()} (in cents)")
+                print("="*50)
+                print("Do you authorize this transaction? Type 'yes' to proceed, or any other key to cancel: ", end="")
+                sys.stdout.flush()
+                user_input = sys.stdin.readline().strip().lower()
 
-            if user_input != 'yes':
-                return "Direct Charge cancelled by human user. Aborted."
+                if user_input != 'yes':
+                    return "Direct Charge cancelled by human user. Aborted."
+            else:
+                err = _verify_remote_confirmation("create_charge", {"amount": amount, "currency": currency, "customer": customer_id})
+                if err: return err
 
             data = {"amount": amount, "currency": currency.lower(), "customer": customer_id}
             resp = requests.post(f"{STRIPE_API_BASE}/charges", auth=auth, data=data)

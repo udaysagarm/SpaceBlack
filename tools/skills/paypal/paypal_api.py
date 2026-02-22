@@ -11,6 +11,7 @@ import urllib.parse
 import json
 import uuid
 import sys
+import os
 from typing import Optional
 from langchain_core.tools import tool
 
@@ -86,6 +87,46 @@ def _request(method: str, endpoint: str, payload: dict = None):
         error_msg = e.read().decode("utf-8")
         raise Exception(f"PayPal API Error ({e.code}): {error_msg}")
 
+def _verify_remote_confirmation(action: str, details: dict) -> str | None:
+    """
+    Handles headless confirmation via chat history for Telegram/Discord.
+    Returns an error string to stop the agent if unconfirmed, or None if confirmed.
+    """
+    LOCK_FILE = "brain/.payment_lock"
+    import random
+    
+    try:
+        if os.path.exists(LOCK_FILE):
+            with open(LOCK_FILE, "r") as f:
+                lock = json.load(f)
+            # Check if this exact transaction was locked
+            if lock.get("action") == action and lock.get("details") == details:
+                expected_code = lock.get("code")
+                # Verify via chat history
+                history_file = "brain/chat_history.json"
+                user_confirmed = False
+                if os.path.exists(history_file):
+                    with open(history_file, "r") as f:
+                        hist = json.load(f)
+                    humans = [m for m in hist if m.get("type") == "human"]
+                    if humans:
+                        last_human = str(humans[-1].get("data", {}).get("content", ""))
+                        if expected_code in last_human:
+                            user_confirmed = True
+
+                if user_confirmed:
+                    os.remove(LOCK_FILE)
+                    return None # Proceed!
+                else:
+                    return f"Transaction pending. You must wait for the user to reply with the code: {expected_code}"
+    except Exception:
+        pass
+
+    # Create a new lock
+    code = str(random.randint(10000, 99999))
+    with open(LOCK_FILE, "w") as f:
+        json.dump({"action": action, "details": details, "code": code}, f)
+    return f"SECURITY ALERT: You MUST stop and ask the user to confirm this payment in the chat. Tell them the amount and details, and ask them to reply with the exact code: {code}"
 
 @tool
 def paypal_act(
@@ -125,21 +166,25 @@ def paypal_act(
                 return "Error: send_payout requires 'amount', 'recipient' (email), and 'note'."
 
             # SECURITY CONFIRMATION
-            print("\n" + "="*50)
-            print("🚨 CRITICAL ALERT: AI INITIATED PAYOUT 🚨")
-            print(f"Action: Send Money via PayPal")
-            print(f"Recipient: {recipient}")
-            print(f"Amount: {amount} {currency}")
-            print(f"Note: {note}")
-            print("="*50)
-            print("Do you authorize this transaction? Type 'yes' to send money, or any other key to cancel: ", end="")
-            sys.stdout.flush()
+            if sys.stdin and sys.stdin.isatty():
+                print("\n" + "="*50)
+                print("🚨 CRITICAL ALERT: AI INITIATED PAYOUT 🚨")
+                print(f"Action: Send Money via PayPal")
+                print(f"Recipient: {recipient}")
+                print(f"Amount: {amount} {currency}")
+                print(f"Note: {note}")
+                print("="*50)
+                print("Do you authorize this transaction? Type 'yes' to send money, or any other key to cancel: ", end="")
+                sys.stdout.flush()
 
-            # Read from standard input directly
-            user_input = sys.stdin.readline().strip().lower()
+                # Read from standard input directly
+                user_input = sys.stdin.readline().strip().lower()
 
-            if user_input != 'yes':
-                return "Transaction cancelled by human user. Payout aborted."
+                if user_input != 'yes':
+                    return "Transaction cancelled by human user. Payout aborted."
+            else:
+                err = _verify_remote_confirmation("send_payout", {"amount": amount, "currency": currency, "recipient": recipient})
+                if err: return err
 
             print("\nProcessing payout...")
 
