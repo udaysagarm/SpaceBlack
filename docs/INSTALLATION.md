@@ -9,6 +9,8 @@ Follow these steps to install and configure Space Black on your system.
 -   **Terminal**: 
     -   **Windows**: Recommended to use PowerShell or Windows Terminal.
     -   **Mac/Linux**: Default terminal is sufficient. Nerd Fonts are recommended for the best experience.
+-   **Audio Drivers (Linux/Raspberry Pi Only)**:
+    -   Space Black uses PortAudio for native microphone integrations. On Mac and Windows, this is pre-packaged. On Linux variants, `setup.sh` requires `apt-get` to install `portaudio19-dev`.
 
 ## Installation Steps
 

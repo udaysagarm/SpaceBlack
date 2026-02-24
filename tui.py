@@ -23,6 +23,11 @@ from brain.memory_manager import SOUL_FILE
 
 from agent import app as agent_app, CONFIG_FILE, ENV_FILE, run_autonomous_heartbeat, load_chat_history, save_chat_history, CHAT_HISTORY_FILE
 
+from tools.voice.recorder import record_audio
+from brain.voice_factory import transcribe_audio, generate_audio_response
+from tools.voice.player import play_audio_bytes
+from brain.provider_models import get_provider_list, get_chat_models, get_tts_models, PROVIDERS
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  Chat Message Widget
@@ -234,11 +239,19 @@ class ConfigScreen(ModalScreen):
     RadioButton {
         width: 100%;
     }
+
+    Select {
+        width: 100%;
+        margin-bottom: 1;
+    }
     """
 
     def compose(self) -> ComposeResult:
         current_provider = "google"
         current_model = ""
+        current_voice_provider = "google"
+        current_tts_model = "gemini-2.5-flash"
+        current_stt_model = "gemini-2.5-flash"
         current_search_provider = "brave"
 
         if os.path.exists(CONFIG_FILE):
@@ -247,6 +260,9 @@ class ConfigScreen(ModalScreen):
                      data = json.load(f)
                      current_provider = data.get("provider", "google")
                      current_model = data.get("model", "")
+                     current_voice_provider = data.get("voice_provider", "google")
+                     current_tts_model = data.get("tts_model", "gemini-2.5-flash")
+                     current_stt_model = data.get("stt_model", "gemini-2.5-flash")
                      current_search_provider = data.get("search_provider", "brave")
              except: pass
 
@@ -257,28 +273,67 @@ class ConfigScreen(ModalScreen):
 
             with Vertical(classes="field-group"):
                 yield Label("Select AI Provider:")
-                with RadioSet(id="provider_radioset"):
-                    yield RadioButton("Google Gemini", id="rb_google", value=(current_provider == "google"))
-                    yield RadioButton("OpenAI", id="rb_openai", value=(current_provider == "openai"))
-                    yield RadioButton("Anthropic", id="rb_anthropic", value=(current_provider == "anthropic"))
+                provider_list = get_provider_list()
+                if current_provider not in dict(provider_list).values():
+                    current_provider = provider_list[0][1] if provider_list else "google"
+                yield Select(provider_list, value=current_provider, id="provider_select", allow_blank=False)
 
             with Vertical(classes="field-group"):
-                yield Label("AI Provider API Key:")
+                yield Label("AI Provider API Key:", id="api_key_label")
                 yield Input(placeholder="(Hidden)", password=True, id="api_key_input")
-                yield Label("Leave empty to keep existing key.", classes="help-text")
+                yield Label("Leave empty to keep existing key. (Ollama requires none)", classes="help-text", id="api_key_help")
 
             with Vertical(classes="field-group"):
                 yield Label("Model Name:")
-                yield Input(value=current_model, placeholder="e.g. gemini-1.5-pro", id="model_input")
-                yield Label("Specific model identifier (optional).", classes="help-text")
+                models_list = [(m, m) for m in get_chat_models(current_provider)]
+                if not models_list and current_model:
+                     models_list = [(current_model, current_model)]
+                elif current_model and current_model not in [m[1] for m in models_list]:
+                     models_list.insert(0, (current_model, current_model))
+                
+                val = current_model if current_model in [m[1] for m in models_list] else (models_list[0][1] if models_list else Select.BLANK)
+                yield Select(models_list, value=val, id="model_select", allow_blank=False)
+                yield Label("Select the model to be used by the agent.", classes="help-text")
+                
+            yield Label("Voice Settings", classes="section-header")
+
+            with Vertical(classes="field-group"):
+                yield Label("Select Voice Provider:")
+                voice_provider_list = get_provider_list()
+                if current_voice_provider not in dict(voice_provider_list).values():
+                    current_voice_provider = voice_provider_list[0][1] if voice_provider_list else "google"
+                yield Select(voice_provider_list, value=current_voice_provider, id="voice_provider_select", allow_blank=False)
+
+            with Vertical(classes="field-group"):
+                yield Label("TTS Model:")
+                tts_models_list = [(m, m) for m in get_tts_models(current_voice_provider)]
+                if not tts_models_list and current_tts_model:
+                     tts_models_list = [(current_tts_model, current_tts_model)]
+                elif current_tts_model and current_tts_model not in [m[1] for m in tts_models_list]:
+                     tts_models_list.insert(0, (current_tts_model, current_tts_model))
+                
+                tts_val = current_tts_model if current_tts_model in [m[1] for m in tts_models_list] else (tts_models_list[0][1] if tts_models_list else Select.BLANK)
+                yield Select(tts_models_list, value=tts_val, id="tts_model_select", allow_blank=False)
+
+            with Vertical(classes="field-group"):
+                from brain.provider_models import get_stt_models
+                yield Label("STT Model:")
+                stt_models_list = [(m, m) for m in get_stt_models(current_voice_provider)]
+                if not stt_models_list and current_stt_model:
+                     stt_models_list = [(current_stt_model, current_stt_model)]
+                elif current_stt_model and current_stt_model not in [m[1] for m in stt_models_list]:
+                     stt_models_list.insert(0, (current_stt_model, current_stt_model))
+                
+                stt_val = current_stt_model if current_stt_model in [m[1] for m in stt_models_list] else (stt_models_list[0][1] if stt_models_list else Select.BLANK)
+                yield Select(stt_models_list, value=stt_val, id="stt_model_select", allow_blank=False)
 
             yield Label("Web Capabilities", classes="section-header")
 
             with Vertical(classes="field-group"):
                 yield Label("Search Provider:")
                 with RadioSet(id="search_provider_radioset"):
-                    yield RadioButton("Brave Search (Recommended)", id="rb_brave", value=(current_search_provider == "brave"))
-                    yield RadioButton("DuckDuckGo (Free/Slower)", id="rb_duckduckgo", value=(current_search_provider == "duckduckgo"))
+                    yield RadioButton("Brave Search", id="rb_brave", value=(current_search_provider == "brave"))
+                    yield RadioButton("DuckDuckGo", id="rb_duckduckgo", value=(current_search_provider == "duckduckgo"))
 
             with Vertical(classes="field-group"):
                 yield Label("Brave Search API Key:")
@@ -291,6 +346,59 @@ class ConfigScreen(ModalScreen):
                 yield Button("Save & Close", variant="primary", id="save_btn")
                 yield Button("Cancel", variant="error", id="cancel_btn")
 
+    def on_mount(self):
+        # Trigger an initial API Key label update based on the mounted provider
+        sel = self.query_one("#provider_select", Select)
+        if sel.value:
+            self.update_api_key_label(sel.value)
+
+    @on(Select.Changed, "#provider_select")
+    def on_provider_changed(self, event: Select.Changed) -> None:
+        provider_id = event.value
+        if not provider_id: return
+        
+        self.update_api_key_label(provider_id)
+        
+        # Update models dropdown
+        model_select = self.query_one("#model_select", Select)
+        models_list = [(m, m) for m in get_chat_models(provider_id)]
+        model_select.set_options(models_list)
+        if model_select.value not in [m[1] for m in models_list]:
+            model_select.value = models_list[0][1] if models_list else Select.BLANK
+
+    @on(Select.Changed, "#voice_provider_select")
+    def on_voice_provider_changed(self, event: Select.Changed) -> None:
+        provider_id = event.value
+        if not provider_id: return
+        
+        # Update TTS models dropdown
+        tts_model_select = self.query_one("#tts_model_select", Select)
+        tts_models_list = [(m, m) for m in get_tts_models(provider_id)]
+        tts_model_select.set_options(tts_models_list)
+        if tts_model_select.value not in [m[1] for m in tts_models_list]:
+            tts_model_select.value = tts_models_list[0][1] if tts_models_list else Select.BLANK
+            
+        # Update STT models dropdown
+        from brain.provider_models import get_stt_models
+        stt_model_select = self.query_one("#stt_model_select", Select)
+        stt_models_list = [(m, m) for m in get_stt_models(provider_id)]
+        stt_model_select.set_options(stt_models_list)
+        if stt_model_select.value not in [m[1] for m in stt_models_list]:
+            stt_model_select.value = stt_models_list[0][1] if stt_models_list else Select.BLANK
+
+    def update_api_key_label(self, provider_id: str):
+        provider_data = PROVIDERS.get(provider_id, {})
+        env_var = provider_data.get("env_var")
+        label = self.query_one("#api_key_label", Label)
+        inp = self.query_one("#api_key_input", Input)
+        if env_var:
+            label.update(f"{provider_data.get('name')} API Key:")
+            inp.disabled = False
+        else:
+            label.update(f"{provider_data.get('name')} (No API Key needed)")
+            inp.disabled = True
+            inp.value = ""
+
     @on(Button.Pressed)
     def handle_buttons(self, event: Button.Pressed):
         if event.button.id == "cancel_btn":
@@ -299,17 +407,20 @@ class ConfigScreen(ModalScreen):
             self.save_config()
 
     def save_config(self):
-        provider_rs = self.query_one("#provider_radioset", RadioSet)
-        provider = "google"
-        if provider_rs.pressed_button:
-            pid = provider_rs.pressed_button.id
-            if pid == "rb_google": provider = "google"
-            elif pid == "rb_openai": provider = "openai"
-            elif pid == "rb_anthropic": provider = "anthropic"
+        provider = self.query_one("#provider_select", Select).value
+        # Use str(value) explicitly to ensure we don't accidentally pass a BLANK instance
+        model_val = self.query_one("#model_select", Select).value
+        model = str(model_val) if model_val != Select.BLANK else ""
+        
+        voice_provider = self.query_one("#voice_provider_select", Select).value
+        tts_model_val = self.query_one("#tts_model_select", Select).value
+        tts_model = str(tts_model_val) if tts_model_val != Select.BLANK else ""
+        
+        stt_model_val = self.query_one("#stt_model_select", Select).value
+        stt_model = str(stt_model_val) if stt_model_val != Select.BLANK else ""
 
-        api_key = self.query_one("#api_key_input").value
-        model = self.query_one("#model_input").value
-        brave_key = self.query_one("#brave_key_input").value
+        api_key = self.query_one("#api_key_input", Input).value
+        brave_key = self.query_one("#brave_key_input", Input).value
 
         search_rs = self.query_one("#search_provider_radioset", RadioSet)
         search_provider = "brave"
@@ -318,33 +429,50 @@ class ConfigScreen(ModalScreen):
              if sid == "rb_brave": search_provider = "brave"
              elif sid == "rb_duckduckgo": search_provider = "duckduckgo"
 
+        if not provider or not model:
+            self.query_one("#status_message", Static).update("[red]Error: Provider and Model are required.[/red]")
+            return
+
         config_data = {
             "provider": provider,
             "model": model,
+            "voice_provider": voice_provider,
+            "tts_model": tts_model,
+            "stt_model": stt_model,
             "search_provider": search_provider
         }
+        
+        # Read existing to preserve skills
+        existing_config = {}
+        if os.path.exists(CONFIG_FILE):
+             try:
+                 with open(CONFIG_FILE, "r") as f:
+                     existing_config = json.load(f)
+             except: pass
+             
+        existing_config.update(config_data)
+
         try:
              with open(CONFIG_FILE, "w") as f:
-                 json.dump(config_data, f, indent=4)
+                 json.dump(existing_config, f, indent=4)
         except Exception as e:
-             self.query_one("#status_message").update(f"Error saving config: {e}")
+             self.query_one("#status_message", Static).update(f"[red]Error saving config: {e}[/red]")
              return
 
-        if api_key:
-            env_var_map = {
-                "google": "GOOGLE_API_KEY",
-                "openai": "OPENAI_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY"
-            }
-            env_var = env_var_map.get(provider)
-            lines = []
-            if os.path.exists(ENV_FILE):
-                with open(ENV_FILE, "r") as f: lines = f.readlines()
-            lines = [l for l in lines if not l.startswith(f"{env_var}=")]
-            lines.append(f"{env_var}={api_key}\n")
-            with open(ENV_FILE, "w") as f: f.writelines(lines)
-            os.environ[env_var] = api_key
+        # Environment Variable updates for API Keys
+        if api_key and provider:
+            provider_data = PROVIDERS.get(provider, {})
+            env_var = provider_data.get("env_var")
+            if env_var:
+                lines = []
+                if os.path.exists(ENV_FILE):
+                    with open(ENV_FILE, "r") as f: lines = f.readlines()
+                lines = [l for l in lines if not l.startswith(f"{env_var}=")]
+                lines.append(f"{env_var}={api_key}\n")
+                with open(ENV_FILE, "w") as f: f.writelines(lines)
+                os.environ[env_var] = api_key
 
+        # Environment Variable update for Brave Key
         if brave_key:
              lines = []
              if os.path.exists(ENV_FILE):
@@ -895,6 +1023,7 @@ class AgentInterface(App):
         Binding("ctrl+r", "restart_session", "Restart", show=True),
         Binding("ctrl+x", "stop_agent", "Stop Agent", show=True),
         Binding("ctrl+s", "stop_agent", "Stop (Alt)", show=False),
+        Binding("ctrl+v", "record_voice", "Speak (5s)", show=True),
         Binding("escape", "dismiss_modal", "Dismiss", show=False),
     ]
 
@@ -971,7 +1100,6 @@ class AgentInterface(App):
     /* ── Toolbar ─────────────────────────────────────────────────── */
     #toolbar {
         height: 3;
-        dock: bottom;
         padding: 0 1;
         background: $surface;
         border-top: solid $primary 40%;
@@ -996,7 +1124,6 @@ class AgentInterface(App):
     /* ── Input ───────────────────────────────────────────────────── */
     #input-area {
         height: auto;
-        dock: bottom;
         padding: 0 1;
         background: $surface;
     }
@@ -1072,7 +1199,10 @@ class AgentInterface(App):
                     yield Button("Stop", variant="error", id="stop-btn")
                     yield Button("Clear", variant="default", id="clear-btn")
                     yield Button("Restart", variant="warning", id="restart-btn")
+                    yield Button("🎙️ Speak", variant="success", id="voice-btn")
                     yield Static("", classes="toolbar-spacer")
+                    yield Label("Auto-Speak: ")
+                    yield Switch(value=True, id="auto_speak_switch")
                     yield Label("Ready", id="status-label")
 
                 # Input
@@ -1216,6 +1346,15 @@ class AgentInterface(App):
             
             # Persist chat history
             save_chat_history(self.messages)
+            
+            # Speak if enabled
+            try:
+                auto_speak = self.query_one("#auto_speak_switch", Switch).value
+            except:
+                auto_speak = False
+                
+            if auto_speak and response_text:
+                self.speak_response(response_text)
 
         except asyncio.CancelledError:
             self._hide_thinking()
@@ -1330,6 +1469,73 @@ class AgentInterface(App):
             self.action_clear_chat()
         elif btn_id == "restart-btn":
             self.action_restart_session()
+        elif btn_id == "voice-btn":
+            self.action_record_voice()
+
+    @work(exclusive=True, thread=True, group="voice")
+    def action_record_voice(self) -> None:
+        self.call_from_thread(self._display_system_message, "🎙️ Listening for 5 seconds...")
+        try:
+            audio_path = record_audio(duration=5)
+            self.call_from_thread(self._display_system_message, "⏳ Transcribing...")
+            
+            provider = "google"
+            stt_model = "gemini-2.5-flash"
+            if os.path.exists(CONFIG_FILE):
+                try:
+                    with open(CONFIG_FILE, "r") as f:
+                        data = json.load(f)
+                        provider = data.get("voice_provider", data.get("provider", "google"))
+                        stt_model = data.get("stt_model", "gemini-2.5-flash")
+                except: pass
+            
+            from brain.provider_models import get_stt_models
+            stt_models_list = get_stt_models(provider)
+            if stt_model not in stt_models_list:
+                stt_model = stt_models_list[0] if stt_models_list else "gemini-2.5-flash"
+            
+            transcript = transcribe_audio(audio_path, provider, stt_model)
+            
+            if transcript:
+                self.call_from_thread(self._submit_voice_text, transcript)
+            else:
+                 self.call_from_thread(self._display_system_message, "❌ No speech detected.")
+
+        except Exception as e:
+            self.call_from_thread(self.notify, f"Microphone error: {e}", severity="error")
+            
+    def _submit_voice_text(self, text: str):
+        chat_history = self.query_one("#chat-history")
+        chat_history.mount(ChatMessage(text, "user"))
+        chat_history.scroll_end()
+        self._msg_count += 1
+        self.update_status_bar()
+        self._agent_worker = self.process_agent_response(text)
+
+    @work(exclusive=True, thread=True, group="voice_out")
+    def speak_response(self, text: str) -> None:
+        try:
+            self.call_from_thread(self.notify, "Generating audio...", severity="information")
+            
+            provider = "google"
+            tts_model = "gemini-2.5-flash"
+            if os.path.exists(CONFIG_FILE):
+                try:
+                     with open(CONFIG_FILE, "r") as f:
+                         data = json.load(f)
+                         provider = data.get("voice_provider", data.get("provider", "google"))
+                         tts_model = data.get("tts_model", "gemini-2.5-flash")
+                except: pass
+            
+            from brain.provider_models import get_tts_models
+            tts_models_list = get_tts_models(provider)
+            if tts_model not in tts_models_list:
+                tts_model = tts_models_list[0] if tts_models_list else "gemini-2.5-flash"
+            
+            audio_bytes = generate_audio_response(text, provider, tts_model)
+            play_audio_bytes(audio_bytes)
+        except Exception as e:
+            self.call_from_thread(self.notify, f"Audio Error: {e}", severity="error")
 
 
 if __name__ == "__main__":

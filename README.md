@@ -11,7 +11,8 @@
 ## What is Space Black?
 
 Space Black is the **Operating System for Agents**. It solves the hard problems of letting LLMs run locally:
-- **Terminal UI**: A beautiful, responsive TUI built with Textual.
+- **Massive Model Support**: Drop-down access to the absolute latest AI models (`gpt-4.5-preview`, `o1`, `gemini-2.5-flash`, `claude-3-7-sonnet`, `grok-2`, `deepseek-r1`, `llama-3.3`), encompassing OpenAI, Google, Anthropic, xAI, Groq, Mistral, and local Ollama.
+- **Terminal UI**: A beautiful, responsive TUI built with Textual, featuring dynamic dropdowns to prevent typos.
 - **Local Memory**: Long-term storage (`brain/`) for context, ensuring the agent "remembers" you.
 - **Tool System**: Safe file I/O, command execution, and system monitoring.
 - **Browser Engine**: A full Chromium-based autonomous browser wrapper.
@@ -41,6 +42,9 @@ Ghost can surf the web like a human.
 
 ### ⚡ Background Daemon
 Run `./spaceblack daemon` to let Ghost work in the background. It checks for scheduled tasks and can even message you on Telegram when a job is done.
+
+### 🎙️ Native Voice Integration
+Talk to Ghost naturally. Space Black integrates seamless Speech-to-Text and highly realistic Text-to-Speech directly in the TUI using cloud providers (OpenAI, Google, Groq, etc.). Fully compatible across macOS, Windows, Linux, and Raspberry Pi.
 
 ### 🛠️ Modular Skills
 Extend Ghost's capabilities with skills defined in `config.json`:

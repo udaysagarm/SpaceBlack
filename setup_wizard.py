@@ -3,6 +3,7 @@ import os
 import json
 import time
 from brain.llm_factory import get_llm
+from brain.provider_models import get_provider_list, get_chat_models, get_tts_models, get_stt_models, PROVIDERS
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.panel import Panel
@@ -14,52 +15,37 @@ ENV_FILE = ".env"
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
 
-def save_config(provider, model_name, api_key, brave_key):
-    # 1. Save config.json
-    config_data = {
-        "provider": provider,
-        "model": model_name,
-        "skills": {
-            "browser": {
-                "enabled": True
-            },
-            "openweather": {
-                "enabled": False,
-                "api_key": ""
-            },
-            "telegram": {
-                "enabled": False,
-                "bot_token": "",
-                "allowed_user_id": ""
-            },
-            "google": {
-                "enabled": False,
-                "credentials_json": ""
-            },
-            "macos": {
-                "enabled": True
-            }
-        }
-    }
-    # Persist search provider if it was already there, or default to brave
+def save_config(provider: str, model: str, voice_provider: str, tts_model: str, stt_model: str, api_key: str, brave_key: str = None):
+    # 1. Save config.json (preserving existing data like skills/tasks)
+    config_data = {}
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r") as f:
-                existing = json.load(f)
-                if "search_provider" in existing:
-                    config_data["search_provider"] = existing["search_provider"]
-        except: pass
+                config_data = json.load(f)
+        except Exception:
+            pass
+
+    config_data["provider"] = provider
+    config_data["model"] = model
+    config_data["voice_provider"] = voice_provider
+    config_data["tts_model"] = tts_model
+    config_data["stt_model"] = stt_model
+
+    if "skills" not in config_data:
+        config_data["skills"] = {
+            "browser": {"enabled": True},
+            "openweather": {"enabled": False, "api_key": ""},
+            "telegram": {"enabled": False, "bot_token": "", "allowed_user_id": ""},
+            "google": {"enabled": False, "credentials_json": ""},
+            "macos": {"enabled": True}
+        }
 
     with open(CONFIG_FILE, "w") as f:
         json.dump(config_data, f, indent=4)
 
     # 2. Update .env
-    env_var_map = {
-        "google": "GOOGLE_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY"
-    }
-    env_var = env_var_map.get(provider)
+    provider_data = PROVIDERS.get(provider, {})
+    env_var = provider_data.get("env_var")
 
     # Read existing
     existing_lines = []
@@ -67,21 +53,20 @@ def save_config(provider, model_name, api_key, brave_key):
         with open(ENV_FILE, "r") as f:
             existing_lines = f.readlines()
 
-    # Filter out old key for this provider
-    new_lines = [line for line in existing_lines if not line.startswith(f"{env_var}=")]
-    new_lines.append(f"{env_var}={api_key}\n")
+    new_lines = existing_lines.copy()
+    
+    if env_var and api_key:
+        new_lines = [line for line in new_lines if not line.startswith(f"{env_var}=")]
+        new_lines.append(f"{env_var}={api_key}\n")
+        os.environ[env_var] = api_key
 
     if brave_key:
         new_lines = [line for line in new_lines if not line.startswith("BRAVE_API_KEY=")]
         new_lines.append(f"BRAVE_API_KEY={brave_key}\n")
+        os.environ["BRAVE_API_KEY"] = brave_key
 
     with open(ENV_FILE, "w") as f:
         f.writelines(new_lines)
-    
-    # Update current env for verification usage
-    os.environ[env_var] = api_key
-    if brave_key:
-        os.environ["BRAVE_API_KEY"] = brave_key
 
 def main():
     clear_screen()
@@ -90,34 +75,63 @@ def main():
 
     # 1. Select Provider
     console.print("[bold]Step 1: Choose your AI Provider[/]")
-    choices = ["google", "anthropic", "openai"]
+    choices = list(PROVIDERS.keys())
     provider = Prompt.ask("Select Provider", choices=choices, default="google")
+    
+    provider_data = PROVIDERS.get(provider, {})
 
     # 2. Enter API Key
-    console.print(f"\n[bold]Step 2: Enter {provider.capitalize()} API Key[/]")
-    api_key = Prompt.ask("API Key", password=True)
-    if not api_key:
-        console.print("[red]API Key is required![/]")
-        return
+    api_key = ""
+    env_var = provider_data.get("env_var")
+    if env_var:
+        console.print(f"\n[bold]Step 2: Enter {provider_data.get('name')} API Key[/]")
+        api_key = Prompt.ask("API Key", password=True)
+        if not api_key:
+            console.print("[red]API Key is required![/]")
+            return
+    else:
+        console.print(f"\n[bold]Step 2: {provider_data.get('name')} requires no API Key. Skipping.[/]")
     
-    # 3. Model Name (Optional)
-    default_models = {
-        "google": "gemini-1.5-pro",
-        "openai": "gpt-4o",
-        "anthropic": "claude-3-5-sonnet"
-    }
-    default_model = default_models.get(provider, "gemini-1.5-pro")
+    # 3. Model Name
+    chat_models = get_chat_models(provider)
+    default_model = chat_models[0] if chat_models else ""
     
-    console.print(f"\n[bold]Step 3: Model Name[/] (Default: [green]{default_model}[/])")
+    console.print(f"\n[bold]Step 3: Model Name[/]")
+    if chat_models:
+        console.print("Available models:")
+        for idx, m in enumerate(chat_models):
+            console.print(f"  {idx + 1}. {m}")
+        
     model_name = Prompt.ask("Enter Model Name (or press Enter for default)", default=default_model)
 
-    # 4. Brave Search
-    console.print("\n[bold]Step 4: Web Search[/]")
+    # 4. Voice Provider and Model
+    console.print("\n[bold]Step 4: Voice Configuration[/]")
+    voice_provider = Prompt.ask("Select Voice Provider", choices=choices, default=provider)
+    tts_models = get_tts_models(voice_provider)
+    default_tts = tts_models[0] if tts_models else ""
+    
+    if tts_models:
+        console.print("Available TTS models:")
+        for idx, m in enumerate(tts_models):
+            console.print(f"  {idx + 1}. {m}")
+            
+    tts_model = Prompt.ask("Enter TTS Model Name (or press Enter for default)", default=default_tts)
+
+    stt_models = get_stt_models(voice_provider)
+    default_stt = stt_models[0] if stt_models else ""
+    if stt_models:
+        console.print("Available STT models:")
+        for idx, m in enumerate(stt_models):
+            console.print(f"  {idx + 1}. {m}")
+    stt_model = Prompt.ask("Enter STT Model Name (or press Enter for default)", default=default_stt)
+
+    # 5. Brave Search
+    console.print("\n[bold]Step 5: Web Search[/]")
     brave_key = None
     if Confirm.ask("Do you have a Brave Search API Key?"):
         brave_key = Prompt.ask("Enter Brave Search API Key", password=True)
 
-    # 5. Verify
+    # 6. Verify
     console.print("\n[yellow]Verifying credentials...[/]")
     try:
         llm = get_llm(provider, model_name, api_key=api_key)
@@ -129,8 +143,8 @@ def main():
             console.print("[red]Setup aborted.[/]")
             return
 
-    # 6. Save
-    save_config(provider, model_name, api_key, brave_key)
+    # 7. Save
+    save_config(provider, model_name, voice_provider, tts_model, stt_model, api_key, brave_key)
     console.print("\n[bold green]Configuration Saved! 🚀[/]")
     console.print("\nYou can now run the agent with:\n[bold]python main.py[/]")
 

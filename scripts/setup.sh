@@ -23,6 +23,9 @@ fi
 echo "⬇Installing dependencies..."
 source .venv/bin/activate
 
+# 4. Install OS-Specific System Dependencies (Voice/Audio)
+bash scripts/install_audio_deps.sh
+
 # Upgrade pip just in case
 pip install --upgrade pip > /dev/null 2>&1
 

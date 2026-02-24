@@ -181,3 +181,12 @@ Deploy a Socket Mode Slack Bot that you can interact with, and allow the agent t
     - "Send a DM to Bob telling him the deployment is done."
     - "What is the status of the Jira ticket mentioned above?"
 
+## 11. Voice Interactions
+Talk to the agent using high-quality multimodal APIs from Google Gemini or OpenAI without needing heavy local models.
+
+- **Status**: ✅ Implemented
+- **Config**: Relies on the main AI provider configuration in `config.json`.
+- **Usage**:
+    - Click the "🎙️ Speak" button in the TUI to dictate prompts.
+    - Enable the "Auto-Speak" toggle in TUI for the agent to talk back to you using native TTS endpoints.
+

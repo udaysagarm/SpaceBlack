@@ -54,6 +54,13 @@ Ghost has a persistent memory.
 - **Long-term**: Stores facts in `brain/MEMORY.md`.
 - **User Profile**: Learns your preferences in `brain/USER.md`.
 
+### 7. Voice Mode
+### 7. Voice Mode
+Ghost integrates native Speech-to-Text and Text-to-Speech using cloud APIs (Google, OpenAI, Groq, Mistral, xAI).
+- **Activate**: Click the "🎙️ Speak" button in the TUI toolbar OR press `Ctrl+V` on your keyboard anywhere in the app to record for 5 seconds.
+- **Auto-Speak**: Toggle the "Auto-Speak" switch on the toolbar to have Ghost narrate its responses.
+- **Configuration**: Use the `/config` UI to select dedicated Voice Providers (`tts-1`, `gemini-2.5-flash`, etc.) separate from your chat models.
+
 ---
 
 ## Keyboard Shortcuts (TUI)

@@ -1,19 +1,14 @@
-
 import os
 from typing import Optional
+from brain.provider_models import PROVIDERS
 
 def get_llm(provider: str, model_name: str, temperature: float = 0.7, api_key: Optional[str] = None):
     """
     Returns a LangChain chat model instance based on the provider.
-    
-    Args:
-        provider: 'google', 'openai', or 'anthropic'
-        model_name: e.g. 'gemini-1.5-pro', 'gpt-4o', 'claude-3-5-sonnet'
-        temperature: randomness of the output
-        api_key: Optional API key. If not provided, it's expected to be in the environment.
     """
     provider = provider.lower().strip()
     
+    # 1. GOOGLE
     if provider == "google":
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI, HarmBlockThreshold, HarmCategory
@@ -32,6 +27,7 @@ def get_llm(provider: str, model_name: str, temperature: float = 0.7, api_key: O
             }
         )
         
+    # 2. OPENAI
     elif provider == "openai":
         try:
             from langchain_openai import ChatOpenAI
@@ -44,6 +40,7 @@ def get_llm(provider: str, model_name: str, temperature: float = 0.7, api_key: O
             api_key=api_key or os.environ.get("OPENAI_API_KEY")
         )
         
+    # 3. ANTHROPIC
     elif provider == "anthropic":
         try:
             from langchain_anthropic import ChatAnthropic
@@ -55,6 +52,58 @@ def get_llm(provider: str, model_name: str, temperature: float = 0.7, api_key: O
             temperature=temperature, 
             api_key=api_key or os.environ.get("ANTHROPIC_API_KEY")
         )
+
+    # 4. GROQ
+    elif provider == "groq":
+        try:
+            from langchain_groq import ChatGroq
+        except ImportError:
+            raise ImportError("Please install langchain-groq to use Groq models.")
+            
+        return ChatGroq(
+            model=model_name,
+            temperature=temperature,
+            api_key=api_key or os.environ.get("GROQ_API_KEY")
+        )
+
+    # 5. MISTRAL
+    elif provider == "mistral":
+        try:
+            from langchain_mistralai import ChatMistralAI
+        except ImportError:
+            raise ImportError("Please install langchain-mistralai to use Mistral models.")
+            
+        return ChatMistralAI(
+            model=model_name,
+            temperature=temperature,
+            api_key=api_key or os.environ.get("MISTRAL_API_KEY")
+        )
+
+    # 6. OLLAMA
+    elif provider == "ollama":
+        try:
+            from langchain_community.chat_models import ChatOllama
+        except ImportError:
+            raise ImportError("Please install langchain-community to use Ollama models.")
+            
+        return ChatOllama(
+            model=model_name,
+            temperature=temperature
+        )
+        
+    # 7. XAI
+    elif provider == "xai":
+        try:
+            from langchain_xai import ChatXAI
+        except ImportError:
+            raise ImportError("Please install langchain-xai to use xAI models.")
+        
+        return ChatXAI(
+            model=model_name,
+            temperature=temperature,
+            xai_api_key=api_key or os.environ.get("XAI_API_KEY")
+        )
         
     else:
-        raise ValueError(f"Unknown provider: {provider}. Supported: google, openai, anthropic.")
+        supported = ", ".join(PROVIDERS.keys())
+        raise ValueError(f"Unknown provider: {provider}. Supported: {supported}.")
