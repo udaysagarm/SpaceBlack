@@ -359,32 +359,74 @@ class ConfigScreen(ModalScreen):
         
         self.update_api_key_label(provider_id)
         
+        # Read the saved model from config to preserve it if valid
+        saved_model = ""
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    saved_model = json.load(f).get("model", "")
+            except: pass
+        
         # Update models dropdown
         model_select = self.query_one("#model_select", Select)
         models_list = [(m, m) for m in get_chat_models(provider_id)]
+        
+        # Add saved model to list if not present but valid
+        if saved_model and saved_model not in [m[1] for m in models_list]:
+            models_list.insert(0, (saved_model, saved_model))
+        
         model_select.set_options(models_list)
-        if model_select.value not in [m[1] for m in models_list]:
-            model_select.value = models_list[0][1] if models_list else Select.BLANK
+        
+        # Preserve saved model if valid, otherwise fall back to first
+        if saved_model and saved_model in [m[1] for m in models_list]:
+            model_select.value = saved_model
+        elif models_list:
+            model_select.value = models_list[0][1]
+        else:
+            model_select.value = Select.BLANK
 
     @on(Select.Changed, "#voice_provider_select")
     def on_voice_provider_changed(self, event: Select.Changed) -> None:
         provider_id = event.value
         if not provider_id: return
         
+        # Read saved voice models from config
+        saved_tts = ""
+        saved_stt = ""
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    data = json.load(f)
+                    saved_tts = data.get("tts_model", "")
+                    saved_stt = data.get("stt_model", "")
+            except: pass
+        
         # Update TTS models dropdown
         tts_model_select = self.query_one("#tts_model_select", Select)
         tts_models_list = [(m, m) for m in get_tts_models(provider_id)]
+        if saved_tts and saved_tts not in [m[1] for m in tts_models_list]:
+            tts_models_list.insert(0, (saved_tts, saved_tts))
         tts_model_select.set_options(tts_models_list)
-        if tts_model_select.value not in [m[1] for m in tts_models_list]:
-            tts_model_select.value = tts_models_list[0][1] if tts_models_list else Select.BLANK
+        if saved_tts and saved_tts in [m[1] for m in tts_models_list]:
+            tts_model_select.value = saved_tts
+        elif tts_models_list:
+            tts_model_select.value = tts_models_list[0][1]
+        else:
+            tts_model_select.value = Select.BLANK
             
         # Update STT models dropdown
         from brain.provider_models import get_stt_models
         stt_model_select = self.query_one("#stt_model_select", Select)
         stt_models_list = [(m, m) for m in get_stt_models(provider_id)]
+        if saved_stt and saved_stt not in [m[1] for m in stt_models_list]:
+            stt_models_list.insert(0, (saved_stt, saved_stt))
         stt_model_select.set_options(stt_models_list)
-        if stt_model_select.value not in [m[1] for m in stt_models_list]:
-            stt_model_select.value = stt_models_list[0][1] if stt_models_list else Select.BLANK
+        if saved_stt and saved_stt in [m[1] for m in stt_models_list]:
+            stt_model_select.value = saved_stt
+        elif stt_models_list:
+            stt_model_select.value = stt_models_list[0][1]
+        else:
+            stt_model_select.value = Select.BLANK
 
     def update_api_key_label(self, provider_id: str):
         provider_data = PROVIDERS.get(provider_id, {})

@@ -7,29 +7,27 @@ PROVIDERS = {
         "chat_models": [
             "gemini-2.5-flash",
             "gemini-2.5-pro",
+            "gemini-2.5-flash-lite",
             "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-2.0-pro-exp",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b"
+            "gemini-3.1-pro-preview",
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview"
         ],
-        "tts_models": ["gemini-2.5-flash", "gemini-2.5-flash-preview-tts", "gemini-2.0-flash"],
+        "tts_models": ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"],
         "stt_models": ["gemini-2.5-flash", "gemini-2.0-flash"]
     },
     "openai": {
         "name": "OpenAI",
         "env_var": "OPENAI_API_KEY",
         "chat_models": [
-            "gpt-4.5-preview",
+            "gpt-5.2",
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
             "gpt-4o",
             "gpt-4o-mini",
-            "o1",
-            "o1-mini",
-            "o1-preview",
-            "o3-mini",
-            "gpt-4-turbo",
-            "gpt-3.5-turbo"
+            "o3",
+            "o4-mini"
         ],
         "tts_models": ["tts-1", "tts-1-hd"],
         "stt_models": ["whisper-1"]
@@ -38,10 +36,9 @@ PROVIDERS = {
         "name": "Anthropic",
         "env_var": "ANTHROPIC_API_KEY",
         "chat_models": [
-            "claude-3-7-sonnet-latest",
-            "claude-3-5-sonnet-latest",
-            "claude-3-5-haiku-latest",
-            "claude-3-opus-latest"
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5"
         ],
         "tts_models": [],
         "stt_models": []
@@ -50,29 +47,21 @@ PROVIDERS = {
         "name": "Groq",
         "env_var": "GROQ_API_KEY",
         "chat_models": [
-            "llama3-70b-8192",
-            "llama3-8b-8192",
-            "llama-3.1-70b-versatile",
-            "llama-3.1-8b-instant",
-            "llama-3.2-11b-vision-preview",
-            "llama-3.2-3b-preview",
-            "llama-3.2-90b-vision-preview",
             "llama-3.3-70b-versatile",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it",
-            "deepseek-r1-distill-llama-70b"
+            "llama-3.1-8b-instant",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
         ],
         "tts_models": [],
-        "stt_models": ["whisper-large-v3", "whisper-large-v3-turbo", "distil-whisper-large-v3-en"]
+        "stt_models": ["whisper-large-v3", "whisper-large-v3-turbo"]
     },
     "mistral": {
         "name": "Mistral AI",
         "env_var": "MISTRAL_API_KEY",
         "chat_models": [
-            "mistral-large-latest",
-            "mistral-small-latest",
-            "open-mistral-nemo",
-            "open-mixtral-8x22b",
+            "mistral-large-3-latest",
+            "mistral-medium-3.1-latest",
+            "mistral-small-3.2-latest",
             "codestral-latest",
             "pixtral-large-latest",
             "ministral-8b-latest",
@@ -85,16 +74,16 @@ PROVIDERS = {
         "name": "Ollama (Local)",
         "env_var": None,  # Ollama runs locally without an API key typically
         "chat_models": [
-            "llama3",
-            "llama3.1",
+            "llama3.3",
             "llama3.2",
-            "mistral",
-            "phi3",
+            "qwen3",
             "qwen2.5",
             "qwen2.5-coder",
+            "phi4",
             "gemma2",
+            "mistral",
             "deepseek-r1",
-            "deepseek-coder-v2"
+            "deepseek-v3"
         ],
         "tts_models": [],
         "stt_models": []
@@ -103,10 +92,9 @@ PROVIDERS = {
         "name": "xAI",
         "env_var": "XAI_API_KEY",
         "chat_models": [
-            "grok-2",
-            "grok-2-latest",
-            "grok-beta",
-            "grok-vision-beta"
+            "grok-4",
+            "grok-3",
+            "grok-3-mini"
         ],
         "tts_models": [],
         "stt_models": []

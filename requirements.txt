@@ -4,6 +4,10 @@ langchain-community
 langchain-google-genai
 langchain-openai
 langchain-anthropic
+langchain-groq
+langchain-mistralai
+langchain-xai
+langchain-ollama
 textual
 python-dotenv
 duckduckgo-search

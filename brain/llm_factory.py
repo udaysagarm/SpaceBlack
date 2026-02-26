@@ -82,9 +82,9 @@ def get_llm(provider: str, model_name: str, temperature: float = 0.7, api_key: O
     # 6. OLLAMA
     elif provider == "ollama":
         try:
-            from langchain_community.chat_models import ChatOllama
+            from langchain_ollama import ChatOllama
         except ImportError:
-            raise ImportError("Please install langchain-community to use Ollama models.")
+            raise ImportError("Please install langchain-ollama to use Ollama models.")
             
         return ChatOllama(
             model=model_name,
