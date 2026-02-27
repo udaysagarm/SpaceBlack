@@ -153,3 +153,6 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         console.print("\n[red]Setup cancelled.[/]")
+    except EOFError:
+        console.print("\n[yellow]⚠️  Cannot read input (non-interactive terminal).[/]")
+        console.print("[yellow]Please run [bold]ghost start[/bold] directly in your terminal.[/]")

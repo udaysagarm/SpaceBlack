@@ -135,13 +135,13 @@ launch_ghost() {
     echo -e "  ${BOLD}Launching Ghost...${NC}"
     echo ""
 
+    # Reattach stdin to the terminal so interactive prompts work
+    # (required when running via `curl | bash` where stdin is the pipe)
     if [ "$1" = "package" ]; then
-        # Package install — ghost is at /usr/local/bin/ghost
-        exec ghost start
+        exec ghost start < /dev/tty
     else
-        # Source install — ghost is in the repo directory
         cd "$INSTALL_DIR"
-        exec ./ghost start
+        exec ./ghost start < /dev/tty
     fi
 }
 
