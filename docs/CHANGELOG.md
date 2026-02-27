@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+-   **`ghost` CLI**: New unified command — `ghost start` launches the agent with auto-setup on first run. Replaces `./spaceblack onboard` + `./spaceblack start`.
+-   **Linux Packages**: `.deb` and `.rpm` packages via `packaging/build_packages.sh`. Installs to `/opt/spaceblack/` with `/usr/local/bin/ghost`.
+-   **Packaging Documentation**: New `docs/PACKAGING.md` and `packaging/README.md`.
+-   **One-Line Installer**: `curl -fsSL https://spaceblack.info/install.sh | bash` — auto-detects OS and installs via package or source.
 -   **Modular Skills System**: Extensible architecture for adding new capabilities.
 -   **Telegram Integration**: Full rewrite of the Telegram Bot Gateway (`tools/skills/telegram/bot.py`).
 -   **OpenWeather Integration**: New skill for real-time weather data (`tools/skills/openweather/weather.py`).

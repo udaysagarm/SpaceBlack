@@ -1,12 +1,12 @@
 # Space Black User Manual
 
 ## Running Ghost
-To wake up **Ghost** (the agent), you run the **Space Black** executable.
+To wake up **Ghost** (the agent), use the **`ghost`** CLI.
 
 ### Interactive Mode (TUI)
 Run this for your daily dev work.
 ```bash
-./spaceblack start
+./ghost start
 ```
 - **Interface**: Full terminal UI where you chat with Ghost.
 - **Controls**: Mouse supported. `Ctrl+C` to exit.
@@ -15,7 +15,7 @@ Run this for your daily dev work.
 ### Headless Mode (Daemon)
 Run this on servers or for background monitoring.
 ```bash
-./spaceblack daemon
+./ghost daemon
 ```
 - **Interface**: None (Silent).
 - **Ghost's Role**: Background worker. Checks `SCHEDULE.json` every 60s.

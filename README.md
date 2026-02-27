@@ -59,27 +59,35 @@ Extend Ghost's capabilities with skills defined in `config.json`:
 
 ## Quick Start
 
-1.  **Clone the Repo**:
-    ```bash
-    git clone https://github.com/udaysagar/SpaceBlack.git
-    cd SpaceBlack
-    ```
+### One-Line Install
+```bash
+curl -fsSL https://spaceblack.info/install.sh | bash
+```
 
-2.  **Wake Ghost**:
-    ```bash
-    ./ghost start
-    ```
-    *Auto-installs dependencies on first run, then launches the agent.*
+> Also available via GitHub:
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/udaysagarm/SpaceBlack/main/install.sh | bash
+> ```
+
+### Manual Install
+```bash
+git clone https://github.com/udaysagarm/SpaceBlack.git
+cd SpaceBlack
+./ghost start
+```
+
+*First run auto-installs dependencies, then launches the agent.*
 
 ## Documentation
 
 Space Black is documented extensively in the `docs/` directory:
 
--   [**Introduction**](docs/INTRODUCTION.md): The philosophy of Space Black.
+-   [**Installation**](docs/INSTALLATION.md): All install methods (curl, source, .deb, .rpm).
 -   [**User Manual**](docs/USAGE.md): How to interact with Ghost.
 -   [**Autonomous Browsing**](docs/BROWSING.md): Details on the browser engine.
 -   [**Architecture**](docs/ARCHITECTURE.md): How Space Black works under the hood.
 -   [**Tools**](docs/TOOLS.md): The toolset available to Ghost.
+-   [**Packaging**](docs/PACKAGING.md): Building and distributing Linux packages.
 -   [**Memory & Soul**](docs/MEMORY.md): How the agent's mind works.
 -   [**Security**](docs/SECURITY.md): Privacy and data safety.
 
