@@ -1,0 +1,492 @@
+
+import os
+import shutil
+import subprocess
+import datetime
+import json
+import time
+from typing import TypedDict, Annotated, List, Union
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage, messages_from_dict, messages_to_dict
+from langchain_core.tools import tool
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+from langchain_community.tools import BraveSearch, DuckDuckGoSearchRun
+from brain.llm_factory import get_llm
+from dotenv import load_dotenv
+import json
+
+# Load environment variables
+load_dotenv()
+
+# Constants
+BRAIN_DIR = "brain"
+CONFIG_FILE = "config.json"
+ENV_FILE = ".env"
+AGENTS_FILE = os.path.join(BRAIN_DIR, "AGENTS.md")
+IDENTITY_FILE = os.path.join(BRAIN_DIR, "IDENTITY.md")
+SOUL_FILE = os.path.join(BRAIN_DIR, "SOUL.md")
+USER_FILE = os.path.join(BRAIN_DIR, "USER.md")
+
+# ... (existing imports)
+from brain.memory_manager import (
+    ensure_brain_initialized, 
+    read_file_safe,
+    build_system_prompt,
+    BRAIN_DIR,
+    SOUL_FILE,
+    HEARTBEAT_FILE,
+    HEARTBEAT_STATE_FILE,
+    SCHEDULE_FILE,
+    IDENTITY_FILE,
+    load_config
+)
+
+# ... (existing constants)
+HEARTBEAT_STATE_FILE = os.path.join(BRAIN_DIR, "memory", "heartbeat-state.json")
+
+# ... (existing functions: load_config, read_file_safe, build_system_prompt)
+
+CHAT_HISTORY_FILE = os.path.join(BRAIN_DIR, "chat_history.json")
+
+def load_chat_history() -> List[BaseMessage]:
+    """Loads the serialized chat history from JSON."""
+    if os.path.exists(CHAT_HISTORY_FILE):
+        try:
+            with open(CHAT_HISTORY_FILE, "r") as f:
+                data = json.load(f)
+            return messages_from_dict(data)
+        except Exception as e:
+            print(f"Warning: Failed to load chat history: {e}")
+    return []
+
+def save_chat_history(messages: List[BaseMessage]) -> None:
+    """Serializes and saves the chat history to JSON."""
+    try:
+        from langchain_core.messages import ToolMessage, AIMessage
+        
+        # Filter out massive tool responses to save space
+        lean_messages = []
+        for msg in messages:
+            if isinstance(msg, ToolMessage):
+                continue
+            
+            # If it's an AI message, clone it without the raw tool_calls metadata 
+            # so the JSON doesn't bloat with base64 images or massive args
+            if isinstance(msg, AIMessage):
+                clean_msg = AIMessage(content=msg.content)
+                lean_messages.append(clean_msg)
+            else:
+                lean_messages.append(msg)
+
+        # Prevent infinite history bloat by keeping only the last 100 messages
+        if len(lean_messages) > 100:
+            lean_messages = lean_messages[-100:]
+            
+        data = messages_to_dict(lean_messages)
+        with open(CHAT_HISTORY_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Warning: Failed to save chat history: {e}")
+
+def parse_recurrence(recurrence: str) -> datetime.timedelta:
+    """
+    Parses a recurrence string into a timedelta.
+    Supports: "30s", "10m", "2h", "5d", "1w".
+    Aliases: "daily" (1d), "weekly" (1w), "hourly" (1h).
+    """
+    recurrence = recurrence.lower().strip()
+    
+    # Aliases
+    if recurrence == "daily": return datetime.timedelta(days=1)
+    if recurrence == "weekly": return datetime.timedelta(weeks=1)
+    if recurrence == "hourly": return datetime.timedelta(hours=1)
+    
+    # Unit parsing
+    try:
+        if recurrence.endswith("s"):
+            return datetime.timedelta(seconds=int(recurrence[:-1]))
+        if recurrence.endswith("m"):
+            return datetime.timedelta(minutes=int(recurrence[:-1]))
+        if recurrence.endswith("h"):
+            return datetime.timedelta(hours=int(recurrence[:-1]))
+        if recurrence.endswith("d"):
+            return datetime.timedelta(days=int(recurrence[:-1]))
+        if recurrence.endswith("w"):
+            return datetime.timedelta(weeks=int(recurrence[:-1]))
+    except ValueError:
+        pass
+        
+    return None
+
+def run_autonomous_heartbeat(force: bool = False) -> Union[str, None]:
+    """
+    Checks if a heartbeat is needed. If so, runs background tasks.
+    Also checks schedule for due tasks.
+    """
+    # 1. Check Schedule (Every run)
+    schedule_notifications = []
+    try:
+        schedule_content = read_file_safe(SCHEDULE_FILE, "[]")
+        schedule = json.loads(schedule_content)
+        
+        current_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        matches = []
+        remaining = []
+        
+        for item in schedule:
+            if item["time"] <= current_time_str:
+                matches.append(item)
+            else:
+                remaining.append(item)
+                
+        if matches:
+            # We have due tasks!
+            # Propagate specific notifications
+            # Save updated schedule (removing executed tasks, rescheduling recurring ones)
+            new_schedule = list(remaining)
+            
+            for task in matches:
+                # notification
+                recurrence = task.get("recurrence")
+                if recurrence:
+                    # Calculate next time
+                    try:
+                        fmt = "%Y-%m-%d %H:%M"
+                        dt = datetime.datetime.strptime(task["time"], fmt)
+                        
+                        delta = parse_recurrence(recurrence)
+                        if delta:
+                            dt += delta
+                            # Update task time
+                            task["time"] = dt.strftime(fmt)
+                            new_schedule.append(task)
+                            schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Rescheduled for {task['time']})")
+                        else:
+                            schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Error: Invalid recurrence '{recurrence}')")
+                    except Exception as e:
+                        schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Error rescheduling: {e})")
+                else:
+                    schedule_notifications.append(f"⏰ **Scheduled Task Due**: {task['task']} (Time: {task['time']})")
+
+            # Sort and save
+            new_schedule.sort(key=lambda x: x["time"])
+            
+            with open(SCHEDULE_FILE, "w") as f:
+                json.dump(new_schedule, f, indent=4)
+    except Exception as e:
+        schedule_notifications.append(f"Scheduler Error: {e}")
+
+    # 2. Check Autonomous Interval (Every 3 hours)
+    last_run = 0
+    if os.path.exists(HEARTBEAT_STATE_FILE):
+        try:
+            with open(HEARTBEAT_STATE_FILE, "r") as f:
+                data = json.load(f)
+                last_run = data.get("last_run", 0) or 0
+        except: pass
+    
+    now = time.time()
+    heartbeat_msg = None
+    
+    # 3 hours = 10800 seconds
+    if force or (now - last_run >= 10800):
+        # Run standard heartbeat check
+        try:
+            heartbeat_instructions = read_file_safe(HEARTBEAT_FILE, "Report status.")
+            identity = read_file_safe(IDENTITY_FILE)
+            
+            prompt = f"""
+            [SYSTEM WAKEUP - AUTONOMOUS HEARTBEAT]
+            You are {identity}.
+            You have just woken up for a scheduled background check.
+            
+            [INSTRUCTIONS]
+            {heartbeat_instructions}
+            
+            [TASK]
+            Perform the check. 
+            - If everything is normal and no action is needed, reply with 'Status: OK'.
+            - If there is something the user needs to know or an action the agent must perform, write a short, clear instruction in PLAIN TEXT.
+            - DO NOT WRITE CODE. DO NOT USE MARKDOWN CODE BLOCKS.
+            - Example: "Create a file named 'test.txt' with content 'hello'."
+            """
+            
+            config = load_config()
+            llm = get_llm(config["provider"], config["model"], temperature=0.3)
+            res = llm.invoke(prompt)
+            # Handle list return from invoke (rare but possible)
+            if isinstance(res, list):
+                res = res[0]
+            
+            content = res.content
+            if isinstance(content, list):
+                # Extract text from parts if it's a list of dicts
+                parts = []
+                for p in content:
+                    if isinstance(p, dict) and "text" in p:
+                        parts.append(p["text"])
+                    else:
+                        parts.append(str(p))
+                content = " ".join(parts)
+            
+            response = str(content).strip()
+            
+            # Update state file
+            with open(HEARTBEAT_STATE_FILE, "w") as f:
+                json.dump({"last_run": now, "status": "ok"}, f)
+
+            if "Status: OK" in response:
+                # Remove "Status: OK" to see if there are other instructions
+                cleaned_response = response.replace("Status: OK", "").strip()
+                if cleaned_response:
+                    heartbeat_msg = cleaned_response
+            else:
+                heartbeat_msg = response
+        except Exception as e:
+            heartbeat_msg = f"Heartbeat Error: {str(e)}"
+
+    # Combine results
+    results = []
+    if schedule_notifications:
+        results.extend(schedule_notifications)
+    if heartbeat_msg:
+        results.append(heartbeat_msg)
+        
+    if results:
+        return "\n\n".join(results)
+    return None
+
+# --- Tools ---
+# Tools are imported from tools/ module
+from langgraph.graph.message import add_messages
+from tools.system import (
+    reflect_and_evolve, 
+    update_user_profile, 
+    update_memory,
+    execute_terminal_command
+)
+from tools.scheduler import schedule_task, cancel_task
+from tools.search import web_search
+from tools.skills.openweather import get_current_weather
+from tools.skills.openweather import get_current_weather
+# OpenClaw-style unified browser tool
+from tools.skills.browser.browser import browser_act
+# GitHub autonomous actions
+from tools.skills.github.github import github_act
+# Stripe autonomous payments
+from tools.skills.stripe.stripe_api import stripe_act
+# Discord bot actions
+from tools.skills.discord.discord_api import discord_act
+# Use Vault Tools
+from tools.vault import get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault
+from tools.files import read_file, write_file, list_directory
+from tools.skills.telegram.send_message import send_telegram_message
+# Google Workspace tools
+from tools.skills.google.gmail import gmail_act
+from tools.skills.google.drive import drive_act
+from tools.skills.google.docs import docs_act
+from tools.skills.google.sheets import sheets_act
+from tools.skills.google.calendar import calendar_act
+from tools.skills.google.wallet import wallet_act
+# PayPal tool
+from tools.skills.paypal.paypal_api import paypal_act
+# macOS native control
+import platform
+if platform.system() == "Darwin":
+    from tools.skills.macos.macos_control import macos_act
+
+
+# --- Graph ---
+
+class AgentState(TypedDict):
+    messages: Annotated[list, add_messages]
+
+def _trim_messages(messages: list, max_messages: int = 24, max_tool_chars: int = 1500) -> list:
+    """
+    Prevent token overflow during multi-step tool sessions (esp. browser).
+    - Truncates old ToolMessage content to max_tool_chars
+    - If history exceeds max_messages, keeps the first 4 + last (max_messages - 4)
+    """
+    from langchain_core.messages import ToolMessage
+    
+    # Truncate old tool messages (keep the last 2 tool messages at full size)
+    tool_msg_indices = [i for i, m in enumerate(messages) if isinstance(m, ToolMessage)]
+    for idx in tool_msg_indices[:-2]:  # All except the last 2
+        msg = messages[idx]
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        if len(content) > max_tool_chars:
+            messages[idx] = ToolMessage(
+                content=content[:max_tool_chars] + "\n... (truncated)",
+                name=msg.name,
+                tool_call_id=msg.tool_call_id,
+            )
+    
+    # Limit total message count
+    if len(messages) > max_messages:
+        # Keep first 4 (system context) + last N
+        keep_end = max_messages - 4
+        messages = messages[:4] + messages[-keep_end:]
+    
+    return messages
+
+
+def run_agent(state: AgentState):
+    system_prompt = build_system_prompt()
+    chat_history = list(state["messages"])
+    
+    # Sanitization: Ensure AIMessages with tool calls have content (fix for google-genai SDK)
+    for msg in chat_history:
+        if isinstance(msg, AIMessage) and msg.tool_calls and not msg.content:
+            msg.content = " "
+            
+    # Robust Fix: Merge system prompt into the first HumanMessage
+    # This avoids "contents required" errors and order issues with Gemini 2.0
+    content = str(chat_history[0].content)
+    
+    # FORCE EXECUTION for Scheduled Tasks
+    if "⏰ **Scheduled Task Due**" in content:
+        content = f"⚠️ SYSTEM OVERRIDE: IMMEDIATELY EXECUTE THE FOLLOWING SCHEDULED TASKS. DO NOT CHAT. USE TOOLS.\n\n{content}"
+
+    if chat_history and isinstance(chat_history[0], HumanMessage):
+        chat_history[0] = HumanMessage(content=system_prompt + "\n\n" + content)
+    else:
+        # Fallback if first message isn't Human
+        chat_history = [HumanMessage(content=system_prompt + "\n\n" + content)] + chat_history
+    
+    # Trim history to prevent token overflow during long browser sessions
+    chat_history = _trim_messages(chat_history)
+    
+    messages = chat_history
+    
+    config = load_config()
+    llm = get_llm(config["provider"], config["model"], temperature=0)
+
+    tools = [reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, schedule_task, cancel_task, web_search]
+    
+    # Dynamic Skills
+    skills_config = config.get("skills", {})
+
+    if skills_config.get("openweather", {}).get("enabled", False):
+        tools.append(get_current_weather)
+
+    if skills_config.get("browser", {}).get("enabled", False):
+        # OpenClaw-style unified browser tool
+        tools.append(browser_act)
+
+    if skills_config.get("github", {}).get("enabled", False):
+        # GitHub action module
+        tools.append(github_act)
+
+    if skills_config.get("stripe", {}).get("enabled", False):
+        # Stripe payment module
+        tools.append(stripe_act)
+
+    if skills_config.get("discord", {}).get("enabled", False):
+        # Discord bot module
+        tools.append(discord_act)
+
+    # File tools are always available
+    tools.extend([read_file, write_file, list_directory])
+    
+    # Vault Tools (Always available for memory management)
+    tools.extend([get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault])
+    
+    # Telegram tool
+    tools.append(send_telegram_message)
+
+    if skills_config.get("google", {}).get("enabled", False):
+        tools.extend([gmail_act, drive_act, docs_act, sheets_act, calendar_act, wallet_act])
+
+    if skills_config.get("macos", {}).get("enabled", False) and platform.system() == "Darwin":
+        tools.append(macos_act)
+
+    if skills_config.get("paypal", {}).get("enabled", False):
+        tools.append(paypal_act)
+
+    llm_with_tools = llm.bind_tools(tools)
+
+    response = llm_with_tools.invoke(messages)
+    
+    # ── GUARD: Empty response after tool use ──────────────────────────────────
+    # This happens when snapshot content is large (emails, Amazon results) — the 
+    # model uses its full context processing tool results and produces no text.
+    # Fix: force a summarization pass so the user always gets a real answer.
+    content_str = response.content if isinstance(response.content, str) else ""
+    has_content  = bool(content_str.strip())
+    has_tools    = bool(response.tool_calls)
+
+    if not has_content and not has_tools:
+        # The model «choked» — force a summary of what just happened
+        # Append the empty response and ask the LLM to summarize plainly
+        summary_messages = list(messages) + [response]
+        summary_prompt = HumanMessage(content=(
+            "[SYSTEM] Your last response was empty. "
+            "Based on all the tool results above, write a clear, concise summary for the user. "
+            "Report what you found, read, or did. Be specific — show actual content (email subjects, "
+            "prices, facts). Do NOT use tool calls in this response. Just write plain text."
+        ))
+        summary_messages.append(summary_prompt)
+        try:
+            # Use a plain LLM (no tools) to force a text-only response
+            plain_llm = get_llm(config["provider"], config["model"], temperature=0)
+            summary_response = plain_llm.invoke(summary_messages)
+            # Use the summary as the actual response
+            summary_text = summary_response.content
+            if isinstance(summary_text, list):
+                summary_text = " ".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in summary_text)
+            if summary_text and summary_text.strip():
+                response.content = summary_text.strip()
+            else:
+                response.content = "(Task completed — no summary generated.)"
+        except Exception as e:
+            response.content = f"(Task completed. Summary error: {e})"
+
+    elif not has_content and has_tools:
+        # Mid-chain: tool calls pending, ensure a non-None content so SDK is happy
+        response.content = " "
+        
+    return {"messages": [response]}
+
+# Define the tools the agent can use
+# We catch the SystemExit to prevent the agent from killing the whole process
+@tool 
+def exit_conversation():
+    """
+    Ends the current conversation.
+    """
+    return "Goodbye!"
+
+def build_graph():
+    workflow = StateGraph(AgentState)
+    workflow.add_node("agent", run_agent)
+    # Note: ToolNode must have *all* potential tools registered, OR we need to dynamically build it?
+    # ToolNode documentation says it executes tools called by the LLM.
+    # Providing all tools safely is fine, as the LLM won't call them if not bound.
+    # However, to be strict, we can just expose all.
+    tools = [
+        reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, 
+        schedule_task, cancel_task, web_search, get_current_weather, 
+        browser_act, github_act, stripe_act, discord_act,
+        get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault,
+        read_file, write_file, list_directory, 
+        exit_conversation, send_telegram_message,
+        gmail_act, drive_act, docs_act, sheets_act, calendar_act, wallet_act,
+        paypal_act,
+    ]
+    # Add macOS tool only on macOS
+    if platform.system() == "Darwin":
+        tools.append(macos_act)
+    tool_node = ToolNode(tools)
+    workflow.add_node("tools", tool_node)
+
+    workflow.set_entry_point("agent")
+
+    def should_continue(state: AgentState):
+        if state["messages"][-1].tool_calls: return "tools"
+        return END
+        
+    workflow.add_conditional_edges("agent", should_continue)
+    workflow.add_edge("tools", "agent")
+    return workflow.compile()
+
+app = build_graph()

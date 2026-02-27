@@ -1,0 +1,23 @@
+#!/bin/bash
+# Post-installation script for spaceblack .deb package
+
+set -e
+
+INSTALL_DIR="/opt/spaceblack"
+
+# Install the ghost CLI launcher
+install -m 755 "$INSTALL_DIR/packaging/ghost" /usr/local/bin/ghost
+
+# Set permissions on scripts
+chmod +x "$INSTALL_DIR/spaceblack" 2>/dev/null || true
+chmod +x "$INSTALL_DIR/scripts/"*.sh 2>/dev/null || true
+
+echo ""
+echo "╔══════════════════════════════════════════════════╗"
+echo "║  Space Black installed successfully!             ║"
+echo "║                                                  ║"
+echo "║  Run:  ghost start                               ║"
+echo "║                                                  ║"
+echo "║  Setup runs automatically on first launch.       ║"
+echo "╚══════════════════════════════════════════════════╝"
+echo ""

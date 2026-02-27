@@ -1,0 +1,14 @@
+Package: spaceblack
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.10), python3-venv, python3-pip
+Maintainer: Uday Sagar <udaysagarm@github.com>
+Homepage: https://github.com/udaysagar/SpaceBlack
+Description: Space Black — Terminal AI Agent Infrastructure
+ Space Black is a terminal-based AI infrastructure designed to host
+ autonomous agents. It provides CLI, file system access, browser engine,
+ and memory system for local AI agents. Ghost is the default AI agent.
+ .
+ After installation, run 'ghost start' to launch the agent.
