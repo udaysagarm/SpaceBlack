@@ -104,6 +104,7 @@ install_from_source() {
         git clone "$REPO" "$INSTALL_DIR"
         cd "$INSTALL_DIR"
     fi
+    
 
     # Make ghost executable
     chmod +x ghost 2>/dev/null || true
