@@ -71,6 +71,11 @@ install_deb() {
         sudo dpkg -i "$DEB_FILE"
         sudo apt-get install -f -y 2>/dev/null || true
         rm -f "$DEB_FILE"
+        
+        # Safety net: ensure CLI launcher is linked
+        sudo mkdir -p /usr/local/bin
+        sudo ln -sf /opt/spaceblack/packaging/ghost /usr/local/bin/ghost
+        
         success "Installed via .deb package!"
         return 0
     fi
@@ -84,6 +89,11 @@ install_rpm() {
         info "Installing .rpm package (requires sudo)..."
         sudo rpm -i "$RPM_FILE" 2>/dev/null || sudo dnf install -y "$RPM_FILE" 2>/dev/null || true
         rm -f "$RPM_FILE"
+        
+        # Safety net: ensure CLI launcher is linked
+        sudo mkdir -p /usr/local/bin
+        sudo ln -sf /opt/spaceblack/packaging/ghost /usr/local/bin/ghost
+        
         success "Installed via .rpm package!"
         return 0
     fi
@@ -104,7 +114,6 @@ install_from_source() {
         git clone "$REPO" "$INSTALL_DIR"
         cd "$INSTALL_DIR"
     fi
-    
 
     # Make ghost executable
     chmod +x ghost 2>/dev/null || true

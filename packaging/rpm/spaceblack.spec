@@ -23,7 +23,8 @@ mkdir -p "%{buildroot}/usr/local/bin"
 
 %post
 # Install the ghost CLI launcher
-install -m 755 /opt/spaceblack/packaging/ghost /usr/local/bin/ghost
+mkdir -p /usr/local/bin
+ln -sf /opt/spaceblack/packaging/ghost /usr/local/bin/ghost
 
 # Set permissions on scripts
 chmod +x /opt/spaceblack/spaceblack 2>/dev/null || true

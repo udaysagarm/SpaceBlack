@@ -6,7 +6,8 @@ set -e
 INSTALL_DIR="/opt/spaceblack"
 
 # Install the ghost CLI launcher
-install -m 755 "$INSTALL_DIR/packaging/ghost" /usr/local/bin/ghost
+mkdir -p /usr/local/bin
+ln -sf "$INSTALL_DIR/packaging/ghost" /usr/local/bin/ghost
 
 # Set permissions on scripts
 chmod +x "$INSTALL_DIR/spaceblack" 2>/dev/null || true
