@@ -68,9 +68,14 @@ install_deb() {
     DEB_FILE="/tmp/spaceblack_latest_all.deb"
     if curl -fsSL -o "$DEB_FILE" "$RELEASES_URL/spaceblack_1.0.0_all.deb" 2>/dev/null; then
         info "Installing .deb package (requires sudo)..."
-        sudo dpkg -i "$DEB_FILE"
-        sudo apt-get install -f -y 2>/dev/null || true
+        sudo dpkg -i "$DEB_FILE" >/dev/null 2>&1 || sudo apt-get install -f -y >/dev/null 2>&1 || true
         rm -f "$DEB_FILE"
+        
+        # Verify install actually succeeded
+        if [ ! -f "/opt/spaceblack/packaging/ghost" ]; then
+            info "Package installation failed. Falling back to source install..."
+            return 1
+        fi
         
         # Safety net: ensure CLI launcher is linked
         sudo mkdir -p /usr/local/bin
@@ -87,8 +92,14 @@ install_rpm() {
     RPM_FILE="/tmp/spaceblack_latest.noarch.rpm"
     if curl -fsSL -o "$RPM_FILE" "$RELEASES_URL/spaceblack-1.0.0-1.noarch.rpm" 2>/dev/null; then
         info "Installing .rpm package (requires sudo)..."
-        sudo rpm -i "$RPM_FILE" 2>/dev/null || sudo dnf install -y "$RPM_FILE" 2>/dev/null || true
+        sudo rpm -i "$RPM_FILE" >/dev/null 2>&1 || sudo dnf install -y "$RPM_FILE" >/dev/null 2>&1 || true
         rm -f "$RPM_FILE"
+        
+        # Verify install actually succeeded
+        if [ ! -f "/opt/spaceblack/packaging/ghost" ]; then
+            info "Package installation failed. Falling back to source install..."
+            return 1
+        fi
         
         # Safety net: ensure CLI launcher is linked
         sudo mkdir -p /usr/local/bin
