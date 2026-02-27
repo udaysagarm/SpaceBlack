@@ -1,6 +1,6 @@
 #!/bin/bash
 # ghost - CLI launcher for Space Black (installed to /usr/local/bin/ghost)
-# Usage: ghost start | ghost daemon | ghost help
+# Usage: ghost start | ghost update | ghost daemon | ghost help
 
 set -e
 
@@ -53,26 +53,59 @@ case "${1:-help}" in
         cd "$INSTALL_DIR"
         "$VENV_DIR/bin/python" main.py
         ;;
+    update)
+        echo "🔄 Updating Space Black..."
+        if [ -d "$INSTALL_DIR/.git" ]; then
+            cd "$INSTALL_DIR"
+            git pull --ff-only
+            if [ -d "$VENV_DIR" ]; then
+                echo "📦 Updating dependencies..."
+                "$VENV_DIR/bin/pip" install -r "$INSTALL_DIR/requirements.txt" --quiet
+            fi
+            echo "✅ Update complete! Run 'ghost start' to launch."
+        else
+            echo "⚠️  Package install detected. To update, download the latest package:"
+            echo "   curl -fsSL https://spaceblack.info/install.sh | bash"
+        fi
+        ;;
     daemon)
         setup_if_needed
         echo "👻 Starting Ghost Daemon..."
         cd "$INSTALL_DIR"
         "$VENV_DIR/bin/python" main.py daemon
         ;;
+    --version|-v|version)
+        echo "Space Black v1.0.0"
+        ;;
     help|--help|-h|"")
-        echo "Ghost — The AI Agent on Space Black"
         echo ""
-        echo "Usage: ghost <command>"
+        echo "  Ghost — The AI Agent on Space Black"
+        echo "  Version: 1.0.0"
         echo ""
-        echo "Commands:"
-        echo "  start   Launch the Ghost agent (auto-setup on first run)"
-        echo "  daemon  Start the background daemon service"
-        echo "  help    Show this help message"
+        echo "  Usage: ghost <command>"
+        echo ""
+        echo "  Commands:"
+        echo "    start       Launch the Ghost agent TUI (auto-setup on first run)"
+        echo "    update      Pull latest code and update dependencies"
+        echo "    daemon      Run Ghost as a background service"
+        echo "    help        Show this help message"
+        echo ""
+        echo "  Options:"
+        echo "    --help      Show this help message"
+        echo "    --version   Show version number"
+        echo ""
+        echo "  Examples:"
+        echo "    ghost start           Launch the interactive TUI"
+        echo "    ghost update          Update to the latest version"
+        echo "    ghost daemon          Start the background daemon"
+        echo ""
+        echo "  Docs:   https://spaceblack.info/docs"
+        echo "  GitHub: https://github.com/udaysagarm/SpaceBlack"
         echo ""
         ;;
     *)
         echo "Unknown command: $1"
-        echo "Run 'ghost help' for usage."
+        echo "Run 'ghost --help' for usage."
         exit 1
         ;;
 esac

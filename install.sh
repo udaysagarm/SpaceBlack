@@ -72,9 +72,6 @@ install_deb() {
         sudo apt-get install -f -y 2>/dev/null || true
         rm -f "$DEB_FILE"
         success "Installed via .deb package!"
-        echo ""
-        echo -e "  Run: ${BOLD}ghost start${NC}"
-        echo ""
         return 0
     fi
     return 1
@@ -88,9 +85,6 @@ install_rpm() {
         sudo rpm -i "$RPM_FILE" 2>/dev/null || sudo dnf install -y "$RPM_FILE" 2>/dev/null || true
         rm -f "$RPM_FILE"
         success "Installed via .rpm package!"
-        echo ""
-        echo -e "  Run: ${BOLD}ghost start${NC}"
-        echo ""
         return 0
     fi
     return 1
@@ -116,27 +110,39 @@ install_from_source() {
     chmod +x scripts/*.sh 2>/dev/null || true
 
     success "Source installed to $INSTALL_DIR"
+
+    # Create global symlink so `ghost start` works from anywhere
+    GHOST_LINK="/usr/local/bin/ghost"
+    if [ ! -f "$GHOST_LINK" ]; then
+        info "Creating global 'ghost' command..."
+        if [ -w "/usr/local/bin" ]; then
+            ln -sf "$INSTALL_DIR/ghost" "$GHOST_LINK"
+        else
+            sudo ln -sf "$INSTALL_DIR/ghost" "$GHOST_LINK"
+        fi
+        success "You can now run 'ghost start' from anywhere!"
+    fi
 }
 
-# ── Post-Install Instructions ────────────────────────────────────────
-print_instructions_source() {
+# ── Auto-Launch Ghost ────────────────────────────────────────────────
+launch_ghost() {
     echo ""
     echo -e "${GREEN}${BOLD}  ✅ Space Black is ready!${NC}"
     echo ""
-    echo "  To launch Ghost:"
-    echo ""
-    echo -e "    ${BOLD}cd $INSTALL_DIR${NC}"
-    echo -e "    ${BOLD}./ghost start${NC}"
-    echo ""
-    echo "  First run will auto-install dependencies."
-    echo ""
-    echo "  Other commands:"
-    echo "    ./ghost daemon   Start background daemon"
-    echo "    ./ghost help     Show all commands"
-    echo ""
-    echo -e "  ${CYAN}Docs:${NC} https://spaceblack.info/docs"
+    echo -e "  ${CYAN}Docs:${NC}   https://spaceblack.info/docs"
     echo -e "  ${CYAN}GitHub:${NC} https://github.com/udaysagarm/SpaceBlack"
     echo ""
+    echo -e "  ${BOLD}Launching Ghost...${NC}"
+    echo ""
+
+    if [ "$1" = "package" ]; then
+        # Package install — ghost is at /usr/local/bin/ghost
+        exec ghost start
+    else
+        # Source install — ghost is in the repo directory
+        cd "$INSTALL_DIR"
+        exec ./ghost start
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -181,8 +187,14 @@ case "$OS_ID" in
         ;;
 esac
 
-# Fallback: install from source
+# Install from source if no package was installed
 if [ "$INSTALLED" = false ]; then
     install_from_source
-    print_instructions_source
+fi
+
+# Auto-launch Ghost
+if [ "$INSTALLED" = true ]; then
+    launch_ghost "package"
+else
+    launch_ghost "source"
 fi

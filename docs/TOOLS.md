@@ -21,7 +21,7 @@ Space Black gives Ghost a full headless browser to interact with the web.
 *   `browser_get_state()`: Get the Accessibility Tree (Ghost's "vision").
 *   `browser_screenshot()`: Save a snapshot.
 
-**See [BROWSING.md](docs/BROWSING.md) for the full guide on Browsing capabilities.**
+**See [BROWSING.md](./BROWSING.md) for the full guide on Browsing capabilities.**
 
 ### 🛠️ System Tools
 Core capabilities for interacting with your machine.

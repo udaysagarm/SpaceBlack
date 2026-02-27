@@ -42,7 +42,7 @@ Space Black provides a persistent browser environment for Ghost.
 - **Vision**: **Chrome DevTools Protocol (CDP)** fetches the Accessibility Tree.
 - **Action**: **Playwright** handles interactions.
 - **Persistence**: Session state (cookies, local storage) saved in `brain/vault/`.
-See [**BROWSING.md**](docs/BROWSING.md) for details.
+See [**BROWSING.md**](./BROWSING.md) for details.
 
 ---
 

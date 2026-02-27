@@ -12,6 +12,13 @@ Run this for your daily dev work.
 - **Controls**: Mouse supported. `Ctrl+C` to exit.
 - **Ghost's Role**: Pair programmer, researcher, and assistant.
 
+### Updating
+Keep Ghost up to date with the latest features and fixes:
+```bash
+./ghost update
+```
+This pulls the latest code and updates dependencies. For package installs (`.deb`/`.rpm`), re-run `curl -fsSL https://spaceblack.info/install.sh | bash`.
+
 ### Headless Mode (Daemon)
 Run this on servers or for background monitoring.
 ```bash
@@ -35,7 +42,7 @@ Ghost is designed to be conversational but precise.
 Ghost can surf the web for you.
 - "Go to github.com and check the trending repos."
 - "Read the documentation for LangGraph and summarize the core concepts."
-See [**Browsing Guide**](docs/BROWSING.md) for details.
+See [**Browsing Guide**](./BROWSING.md) for details.
 
 ### 4. Native App & Workspace Integrations
 Ghost can control your local apps and cloud workspace.
@@ -55,7 +62,6 @@ Ghost has a persistent memory.
 - **User Profile**: Learns your preferences in `brain/USER.md`.
 
 ### 7. Voice Mode
-### 7. Voice Mode
 Ghost integrates native Speech-to-Text and Text-to-Speech using cloud APIs (Google, OpenAI, Groq, Mistral, xAI).
 - **Activate**: Click the "🎙️ Speak" button in the TUI toolbar OR press `Ctrl+V` on your keyboard anywhere in the app to record for 5 seconds.
 - **Auto-Speak**: Toggle the "Auto-Speak" switch on the toolbar to have Ghost narrate its responses.
@@ -65,4 +71,5 @@ Ghost integrates native Speech-to-Text and Text-to-Speech using cloud APIs (Goog
 
 ## Keyboard Shortcuts (TUI)
 - **Enter**: Send message to Ghost.
+- **Ctrl+V**: Record voice input (5 seconds).
 - **Ctrl+C**: Quit Space Black.
