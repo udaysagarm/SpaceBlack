@@ -138,7 +138,7 @@ launch_ghost() {
     # Reattach stdin to the terminal so interactive prompts work
     # (required when running via `curl | bash` where stdin is the pipe)
     if [ "$1" = "package" ]; then
-        exec ghost start < /dev/tty
+        exec /usr/local/bin/ghost start < /dev/tty
     else
         cd "$INSTALL_DIR"
         exec ./ghost start < /dev/tty
