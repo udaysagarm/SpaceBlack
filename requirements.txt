@@ -8,13 +8,18 @@ langchain-groq
 langchain-mistralai
 langchain-xai
 langchain-ollama
+langgraph
 textual
 python-dotenv
 duckduckgo-search
 google-generativeai
 httpx
+requests
+pydantic
 python-telegram-bot
 discord.py
+slack-bolt
+slack-sdk
 
 # Browser Automation
 playwright
@@ -29,3 +34,8 @@ google-auth-oauthlib
 # Vault System
 keyring
 cryptography
+
+# Voice / Audio
+sounddevice
+numpy
+scipy

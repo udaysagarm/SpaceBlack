@@ -23,9 +23,18 @@ from brain.memory_manager import SOUL_FILE
 
 from agent import app as agent_app, CONFIG_FILE, ENV_FILE, run_autonomous_heartbeat, load_chat_history, save_chat_history, CHAT_HISTORY_FILE
 
-from tools.voice.recorder import record_audio
-from brain.voice_factory import transcribe_audio, generate_audio_response
-from tools.voice.player import play_audio_bytes
+try:
+    from tools.voice.recorder import record_audio
+    from brain.voice_factory import transcribe_audio, generate_audio_response
+    from tools.voice.player import play_audio_bytes
+    VOICE_AVAILABLE = True
+except ImportError:
+    VOICE_AVAILABLE = False
+    record_audio = None
+    transcribe_audio = None
+    generate_audio_response = None
+    play_audio_bytes = None
+
 from brain.provider_models import get_provider_list, get_chat_models, get_tts_models, PROVIDERS
 
 
@@ -1516,6 +1525,9 @@ class AgentInterface(App):
 
     @work(exclusive=True, thread=True, group="voice")
     def action_record_voice(self) -> None:
+        if not VOICE_AVAILABLE:
+            self.call_from_thread(self.notify, "Voice not available. Install: pip install sounddevice numpy scipy", severity="error")
+            return
         self.call_from_thread(self._display_system_message, "🎙️ Listening for 5 seconds...")
         try:
             audio_path = record_audio(duration=5)
@@ -1556,6 +1568,8 @@ class AgentInterface(App):
 
     @work(exclusive=True, thread=True, group="voice_out")
     def speak_response(self, text: str) -> None:
+        if not VOICE_AVAILABLE:
+            return
         try:
             self.call_from_thread(self.notify, "Generating audio...", severity="information")
             
