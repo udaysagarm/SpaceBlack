@@ -79,7 +79,7 @@ install_deb() {
         success "Installed via .deb package!"
         return 0
     fi
-    return 1
+    return 1 
 }
 
 install_rpm() {
