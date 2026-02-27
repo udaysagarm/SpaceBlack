@@ -32,5 +32,5 @@ echo.
 echo Setup Complete!
 echo.
 echo To start, run:
-echo    spaceblack start
+echo    ghost start
 pause

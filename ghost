@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# ghost - CLI Wrapper for Space Black
+# Usage: ./ghost start | ./ghost daemon | ./ghost help
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# ── Auto-setup on first run ──────────────────────────────────────────
+setup_if_needed() {
+    if [ ! -d ".venv" ]; then
+        echo "🔧 First run detected. Setting up Space Black..."
+        echo ""
+        ./scripts/setup.sh
+        if [ $? -ne 0 ]; then
+            echo "❌ Setup failed."
+            exit 1
+        fi
+        echo ""
+    fi
+}
+
+# ── Commands ─────────────────────────────────────────────────────────
+case "${1:-help}" in
+    start)
+        setup_if_needed
+        echo "🚀 Launching Ghost..."
+        ./scripts/run.sh
+        ;;
+    daemon)
+        setup_if_needed
+        echo "👻 Starting Ghost Daemon..."
+        source .venv/bin/activate
+        python main.py daemon
+        ;;
+    help|--help|-h|"")
+        echo "Ghost — The AI Agent on Space Black"
+        echo ""
+        echo "Usage: ./ghost <command>"
+        echo ""
+        echo "Commands:"
+        echo "  start   Launch the Ghost agent (auto-setup on first run)"
+        echo "  daemon  Start the background daemon service"
+        echo "  help    Show this help message"
+        echo ""
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Run './ghost help' for usage."
+        exit 1
+        ;;
+esac

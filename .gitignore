@@ -40,3 +40,7 @@ USER.md
 MEMORY.md
 /USER.md
 /MEMORY.md
+
+# Packaging Build Artifacts
+packaging/build/
+packaging/dist/

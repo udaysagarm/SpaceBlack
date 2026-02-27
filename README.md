@@ -41,7 +41,7 @@ Ghost can surf the web like a human.
 [Read more about Browsing](docs/BROWSING.md)
 
 ### ⚡ Background Daemon
-Run `./spaceblack daemon` to let Ghost work in the background. It checks for scheduled tasks and can even message you on Telegram when a job is done.
+Run `./ghost daemon` to let Ghost work in the background. It checks for scheduled tasks and can even message you on Telegram when a job is done.
 
 ### 🎙️ Native Voice Integration
 Talk to Ghost naturally. Space Black integrates seamless Speech-to-Text and highly realistic Text-to-Speech directly in the TUI using cloud providers (OpenAI, Google, Groq, etc.). Fully compatible across macOS, Windows, Linux, and Raspberry Pi.
@@ -65,16 +65,11 @@ Extend Ghost's capabilities with skills defined in `config.json`:
     cd SpaceBlack
     ```
 
-2.  **Onboard**:
+2.  **Wake Ghost**:
     ```bash
-    ./spaceblack onboard
+    ./ghost start
     ```
-    *Installs dependencies, browser binaries, and sets up the environment.*
-
-3.  **Wake Ghost**:
-    ```bash
-    ./spaceblack start
-    ```
+    *Auto-installs dependencies on first run, then launches the agent.*
 
 ## Documentation
 

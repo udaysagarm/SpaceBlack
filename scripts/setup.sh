@@ -41,7 +41,7 @@ if pip install -r requirements.txt; then
 
     echo " "
     echo "To start the agent, run:"
-    echo "   ./spaceblack start"
+    echo "   ./ghost start"
 else
     echo "❌ Dependencies failed to install."
     exit 1
