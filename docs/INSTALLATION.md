@@ -31,10 +31,10 @@ The installer will:
 1.  Detect your operating system.
 2.  On **Debian/Ubuntu**: download and install the `.deb` package from [GitHub Releases](https://github.com/udaysagarm/SpaceBlack/releases).
 3.  On **Fedora/RHEL**: download and install the `.rpm` package.
-4.  On **macOS** or other systems: clone the repository to `~/SpaceBlack`.
-5.  Print instructions to launch Ghost.
+4.  On **macOS** or other systems: clone the repository to `~/SpaceBlack` and create a global `ghost` command.
+5.  **Automatically launch Ghost.**
 
-After install, launch the agent:
+To run again later:
 ```bash
 ghost start
 ```
@@ -57,7 +57,7 @@ cd SpaceBlack
 
 **Windows (PowerShell)**
 ```powershell
-ghost start
+.\ghost.bat start
 ```
 
 On first run, the `ghost` CLI will automatically:
@@ -111,7 +111,7 @@ To update an existing installation to the latest version:
 
 **Source install (macOS / Linux / Windows):**
 ```bash
-./ghost update
+ghost update
 ```
 This pulls the latest code from GitHub and updates any changed dependencies.
 
@@ -130,7 +130,10 @@ curl -fsSL https://spaceblack.info/install.sh | bash
 | `ghost start` | Launch Ghost (auto-setup on first run) |
 | `ghost update` | Pull latest code & update dependencies |
 | `ghost daemon` | Start the background daemon |
-| `ghost help` | Show available commands |
+| `ghost --help` | Show all commands and options |
+| `ghost --version` | Show version number |
+
+See [**Commands Reference**](./COMMANDS.md) for platform-specific commands.
 
 ---
 

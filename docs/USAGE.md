@@ -6,7 +6,7 @@ To wake up **Ghost** (the agent), use the **`ghost`** CLI.
 ### Interactive Mode (TUI)
 Run this for your daily dev work.
 ```bash
-./ghost start
+ghost start
 ```
 - **Interface**: Full terminal UI where you chat with Ghost.
 - **Controls**: Mouse supported. `Ctrl+C` to exit.
@@ -15,18 +15,24 @@ Run this for your daily dev work.
 ### Updating
 Keep Ghost up to date with the latest features and fixes:
 ```bash
-./ghost update
+ghost update
 ```
 This pulls the latest code and updates dependencies. For package installs (`.deb`/`.rpm`), re-run `curl -fsSL https://spaceblack.info/install.sh | bash`.
 
 ### Headless Mode (Daemon)
 Run this on servers or for background monitoring.
 ```bash
-./ghost daemon
+ghost daemon
 ```
 - **Interface**: None (Silent).
 - **Ghost's Role**: Background worker. Checks `SCHEDULE.json` every 60s.
 - **Interaction**: Use Telegram to talk to Ghost while it runs in the background.
+
+### Help
+```bash
+ghost --help
+```
+Shows all available commands and options. See [**Commands Reference**](./COMMANDS.md) for full details.
 
 ---
 

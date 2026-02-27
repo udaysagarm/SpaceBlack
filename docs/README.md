@@ -22,6 +22,6 @@ Welcome to the Space Black documentation.
 -   [**Changelog**](./CHANGELOG.md): History of changes and updates.
 
 ## External Resources
--   [GitHub Repository](https://github.com/udaysagar/SpaceBlack)
+-   [GitHub Repository](https://github.com/udaysagarm/SpaceBlack)
 -   [Textual Documentation](https://textual.textualize.io/)
 -   [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)

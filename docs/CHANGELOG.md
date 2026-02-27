@@ -9,8 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 -   **`ghost` CLI**: New unified command — `ghost start` launches the agent with auto-setup on first run. Replaces `./spaceblack onboard` + `./spaceblack start`.
+-   **`ghost update`**: New command to pull latest code and update dependencies.
+-   **`ghost --help` / `ghost --version`**: Full help output with commands, options, examples, and version info.
+-   **Global macOS command**: Installer creates `/usr/local/bin/ghost` symlink so `ghost start` works from any directory.
+-   **Auto-launch**: `curl | bash` installer now automatically launches Ghost after installation.
 -   **Linux Packages**: `.deb` and `.rpm` packages via `packaging/build_packages.sh`. Installs to `/opt/spaceblack/` with `/usr/local/bin/ghost`.
 -   **Packaging Documentation**: New `docs/PACKAGING.md` and `packaging/README.md`.
+-   **Commands Reference**: New `docs/COMMANDS.md` with exact commands for macOS, Linux, Windows, and Raspberry Pi.
 -   **One-Line Installer**: `curl -fsSL https://spaceblack.info/install.sh | bash` — auto-detects OS and installs via package or source.
 -   **Modular Skills System**: Extensible architecture for adding new capabilities.
 -   **Telegram Integration**: Full rewrite of the Telegram Bot Gateway (`tools/skills/telegram/bot.py`).
