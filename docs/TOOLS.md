@@ -45,6 +45,10 @@ Updates your user profile.
 -   **Usage**: Learning about you (name, tech stack, preferences).
 -   **Storage**: `brain/USER.md`.
 
+### `exit_conversation`
+Terminates the current conversational loop.
+-   **Usage**: Used when interactions naturally conclude, or when the user explicitly requests to stop talking, preventing infinite or repetitive agent responses.
+
 ## Scheduler Tools (Cron Jobs)
 Space Black runs a background daemon that constantly checks for due tasks.
 
@@ -92,7 +96,7 @@ When the Google skill is enabled via standard OAuth2, Ghost gains access to the 
 
 ### macOS Native Control
 When running on macOS (with the skill enabled), Ghost can control local applications via AppleScript using a single endpoint:
-*   `macos_act(action, ...)`: Controls Apple Mail, Calendar, Notes, Reminders, Finder, and System state. Handle operations locally without web APIs.
+*   `macos_act(action, ...)`: Controls Apple Mail, Calendar, Notes, Reminders, Finder, and System state. All operations are handled natively on your machine without relying on external web APIs. Only available on macOS (Darwin).
 
 ### Developer & Service APIs
 *   `github_act(action, ...)`: Direct control over GitHub via API. Can read repos, manage issues, create branches, and directly manipulate code files.

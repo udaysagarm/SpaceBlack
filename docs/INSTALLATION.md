@@ -39,6 +39,9 @@ To run again later:
 ghost start
 ```
 
+> **Note on Non-Interactive Environments:**
+> If you run the `install.sh` script in a non-interactive environment (like a CI system or without a TTY), the interactive `setup_wizard.py` will safely abort to prevent an infinite `EOFError` loop. In this case, simply run `ghost start` natively in your terminal afterward to complete the setup.
+
 ---
 
 ## Option 2: Manual Clone

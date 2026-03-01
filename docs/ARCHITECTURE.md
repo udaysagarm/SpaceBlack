@@ -12,6 +12,8 @@ Ghost's state is strictly file-based.
 - **`USER.md`**: Profile of you (the user).
 - **`SCHEDULE.json`**: Pending tasks.
 - **`HEARTBEAT.md`**: Background loop instructions.
+- **`chat_history.json`**: Serialized session history to maintain context without token overflow.
+- **`memory/heartbeat-state.json`**: State tracking for the background daemon to ensure tasks run at correct intervals.
 - **`vault/`**: Secure storage for browser sessions and secrets.
 
 ### 2. The Agent Logic (`agent.py`)
