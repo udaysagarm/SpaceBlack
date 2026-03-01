@@ -85,7 +85,12 @@ Ghost has safe, direct access to the local file system.
 
 ## Integration Tools
 
-### Google Workspace
+### 4. Jira Module
+- `jira_act`: Central tool for Atlassian Jira interactions.
+  - Actions: `get_issue`, `search_issues` (via JQL), `create_issue`, `add_comment`, `get_transitions`, `transition_issue`.
+  - Usage examples: "What's the status of PROJ-42?", "Create a task in project TST for updating the database."
+
+### 5. Google Workspace Module
 When the Google skill is enabled via standard OAuth2, Ghost gains access to the following `@tool` endpoints:
 *   `gmail_act(action, ...)`: Send, read, search, and manage emails.
 *   `calendar_act(action, ...)`: Create, list, delete, and check calendar events.

@@ -29,6 +29,7 @@ This file lists the capabilities currently enabled for your Ghost Agent.
 -   **macOS Control**: (If on Mac) I can control Apple Mail, Calendar, Notes, Reminders, Finder, and system UI natively using `macos_act`.
 -   **GitHub Actions**: (If configured) I can manage repositories, issues, and commit code using `github_act`.
 -   **Discord Bot**: (If configured) I can interact with Discord channels and servers using `discord_act`.
+-   **Jira Integration**: (If configured) I can search, read, comment on, and manage tickets using `jira_act`.
 -   **PayPal Api**: (If configured) I can retrieve balances, output payouts, and generate invoices using `paypal_act`.
 
 ## File System (Native)

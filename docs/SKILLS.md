@@ -190,3 +190,23 @@ Talk to the agent using high-quality multimodal APIs from Google Gemini or OpenA
     - Click the "🎙️ Speak" button in the TUI to dictate prompts.
     - Enable the "Auto-Speak" toggle in TUI for the agent to talk back to you using native TTS endpoints.
 
+## 12. Jira Integration
+Manage tickets, check issue statuses, add comments, and transition Jira issues autonomously using the native Jira API v3.
+
+- **Status**: ✅ Implemented
+- **Config**: Configurable via the Terminal UI (Settings -> Skills).
+```json
+"skills": {
+    "jira": {
+        "enabled": true,
+        "domain": "https://your-domain.atlassian.net",
+        "email": "your-email@example.com",
+        "api_token": "YOUR_JIRA_API_TOKEN"
+    }
+}
+```
+- **Usage**:
+    - "What is the status of PROJ-42?"
+    - "Create a bug ticket in APP project for the login failure."
+    - "Add a comment to DB-12 that the migration is done."
+    - "Find all issues assigned to me in the current sprint."

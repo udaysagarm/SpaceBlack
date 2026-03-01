@@ -277,6 +277,8 @@ from tools.skills.github.github import github_act
 from tools.skills.stripe.stripe_api import stripe_act
 # Discord bot actions
 from tools.skills.discord.discord_api import discord_act
+# Jira autonomous actions
+from tools.skills.jira.jira_api import jira_act
 # Use Vault Tools
 from tools.vault import get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault
 from tools.files import read_file, write_file, list_directory
@@ -385,6 +387,10 @@ def run_agent(state: AgentState):
         # Discord bot module
         tools.append(discord_act)
 
+    if skills_config.get("jira", {}).get("enabled", False):
+        # Jira action module
+        tools.append(jira_act)
+
     # File tools are always available
     tools.extend([read_file, write_file, list_directory])
     
@@ -466,7 +472,7 @@ def build_graph():
     tools = [
         reflect_and_evolve, update_memory, update_user_profile, execute_terminal_command, 
         schedule_task, cancel_task, web_search, get_current_weather, 
-        browser_act, github_act, stripe_act, discord_act,
+        browser_act, github_act, stripe_act, discord_act, jira_act,
         get_secret, set_secret, list_secrets, initialize_local_vault, unlock_local_vault, lock_local_vault,
         read_file, write_file, list_directory, 
         exit_conversation, send_telegram_message,
